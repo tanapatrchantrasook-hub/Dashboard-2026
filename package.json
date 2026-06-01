@@ -1,0 +1,13 @@
+{
+  "name": "petes-trade-dash-2026",
+  "version": "1.0.0",
+  "description": "Pete's Trading Dashboard 2026",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "multer": "^2.1.1"
+  }
+}
