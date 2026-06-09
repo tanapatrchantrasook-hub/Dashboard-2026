@@ -1,0 +1,15 @@
+# Dependencies — reinstalled with `npm install`
+node_modules/
+
+# Secret Supabase credentials — copy this file manually to each computer, never commit it
+supabase-config.json
+
+# Data syncs via Supabase (cloud), not git — keep the repo code-only
+data/
+backups/
+
+# Machine-specific local settings
+.claude/settings.local.json
+
+# Zips
+*.zip

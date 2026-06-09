@@ -1,0 +1,5 @@
+{
+  "url": "https://YOUR-PROJECT-ref.supabase.co",
+  "key": "YOUR-SERVICE-ROLE-KEY",
+  "table": "dashboard"
+}
