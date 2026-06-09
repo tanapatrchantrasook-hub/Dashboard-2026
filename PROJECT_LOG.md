@@ -79,5 +79,30 @@ Auto-generated insights from logged data + dashboard improvement ideas.
 - Trading day boundary = 03:00 BKK (computed from UTC epoch).
 - Performance reflects the Trade Journal (real trades). Trades of the Day = missed/not-taken.
 
+## Working from two computers (work + home)
+
+**How sync is split:**
+- **DATA** (trades, Trades of the Day, setups, screenshots, watchlists, report cards) syncs automatically through **Supabase cloud**. Enabled when `supabase-config.json` has `"enabled": true`. The app loads cloud-first on open and saves to the cloud after every change.
+- **CODE** (the app's features/fixes) syncs through **GitHub**: `github.com/tanapatrchantrasook-hub/Dashboard-2026` (branch `main`). The data file is NOT in git (it's `.gitignore`d) — only code is.
+
+**Launchers (double-click):**
+- `launch.vbs` — just start the dashboard (portable; finds its own folder).
+- `update-and-launch.vbs` — `git pull` the latest code from GitHub, then start. Use this to get the newest version. (If a future update adds a new dependency, run `npm install` once after pulling.)
+
+**One-time home-computer setup:**
+1. Install Node.js LTS (`winget install OpenJS.NodeJS.LTS`) and Git.
+2. `git clone https://github.com/tanapatrchantrasook-hub/Dashboard-2026.git`
+3. Copy `supabase-config.json` into the cloned folder. It is NOT in GitHub (it holds the secret key) — bring it over once via the Desktop `PetesDash.zip` (USB / Google Drive). It must contain `"enabled": true`.
+4. `npm install`
+5. Double-click `launch.vbs` (or `update-and-launch.vbs`). First open pulls all data from the cloud.
+
+**Daily workflow (prevents conflicts):**
+- Work on ONE computer at a time — don't edit on both simultaneously (last save wins).
+- When finishing on a computer: close the dashboard browser tab (forces a save) and wait ~10s so the latest pushes to the cloud.
+- On the other computer: open it — it loads the newest data from the cloud.
+- To get code updates: double-click `update-and-launch.vbs` (or run `git pull` then restart).
+
+**Data-loss safety (all active):** saving is locked until data has loaded; the server refuses any save that would wipe trades to empty; a `backups/dashboard-data.lastgood.json` is written before each save and auto-restored on startup if the live file is ever empty. Plus timestamped local `backups/` and the Desktop "(Back Up)" folder.
+
 ## To-do / next
-- GitHub setup so code syncs between work + home computers (avoids manual zip uploads).
+- (Done) GitHub code sync + Supabase data sync across work + home.
