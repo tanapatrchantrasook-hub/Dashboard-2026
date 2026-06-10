@@ -453,7 +453,7 @@ input[type=file]{display:none}
         </div>
         <div class="chart-card"><div class="chart-title">Total PnL — Per Trade ($)</div><canvas id="pnl-chart" height="150"></canvas></div>
         <div class="chart-card"><div class="chart-title">Avg Reward (R) by Day <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Potential: all trades · Actual: Trade Journal)</span></div><canvas id="rr-chart" height="150"></canvas></div>
-        <div class="chart-card" id="mistakes-chart-card"><div class="chart-title">Mistakes Made</div><canvas id="mistakes-chart" height="95"></canvas><div id="mistakes-breakdown" style="margin-top:14px"></div></div>
+        <div class="chart-card" id="mistakes-chart-card"><div class="chart-title">Mistakes Made</div><div id="mistakes-breakdown" style="margin-top:6px"></div></div>
       </div>
       <div class="chart-card" id="missed-trades-card" style="margin-top:14px">
         <div class="chart-title">Missed Trades — Reasons <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Trades of the Day)</span></div>
@@ -1654,66 +1654,33 @@ function renderPerformance(){
     afterBody:(items)=>{const d=days[items[0].dataIndex];const m=dayMap[d];return m?`\nTrades: ${m.pot.length} with potential, ${m.act.length} with actual`:'';},
   }}},scales:{x:{ticks:{color:'#888884'},grid:{color:gc}},y:{ticks:{color:'#888884'},grid:{color:gc}}}}});
 
-  // Mistakes chart — always show
+  // Mistakes Made — ranked breakdown (the bars here are the chart; no separate canvas)
   const mistakeCard = document.getElementById('mistakes-chart-card');
   mistakeCard.style.display = 'block';
-  if (mChart) mChart.destroy();
+  const _mEmptyOld = document.getElementById('mistakes-empty-state'); if (_mEmptyOld) _mEmptyOld.remove();
   if (masterMistakes.length) {
     const counts = {};
     masterMistakes.forEach(m => { counts[m.name] = 0; });
     allT.forEach(t => { if (t.mistakes) t.mistakes.forEach(name => { if (counts[name] !== undefined) counts[name]++; }); });
     const labels = Object.keys(counts);
     const data = Object.values(counts);
-
-    // Ranked text breakdown (always shows the data clearly as a stat)
     const totalMistakes = data.reduce((a,b)=>a+b,0);
     const bd = document.getElementById('mistakes-breakdown');
     if (bd) {
       const ranked = labels.map((l,i)=>({name:l,count:data[i],id:(masterMistakes.find(x=>x.name===l)||{}).id})).sort((a,b)=>b.count-a.count);
       const maxC = Math.max(1, ...data);
-      bd.innerHTML = `<div style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin:4px 0 10px;border-top:0.5px solid var(--border);padding-top:12px">Breakdown · ${totalMistakes} total logged · click ✎ to rename, ✕ to remove</div>` +
+      bd.innerHTML = `<div style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin:2px 0 12px">${totalMistakes} total logged · click ✎ to rename, ✕ to remove</div>` +
         ranked.map(r=>`
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:7px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:9px">
             <div style="flex:1;font-size:12px;color:${r.count>0?'var(--text)':'rgba(255,255,255,0.3)'}">${r.name}</div>
             <div style="width:120px;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden"><div style="width:${Math.round(r.count/maxC*100)}%;height:100%;background:${r.count>0?'var(--red)':'transparent'}"></div></div>
             <div style="font-family:var(--fd);font-size:12px;font-weight:700;color:${r.count>0?'var(--red)':'rgba(255,255,255,0.3)'};min-width:60px;text-align:right">${r.count}× ${totalMistakes?'· '+Math.round(r.count/totalMistakes*100)+'%':''}</div>
             ${r.id!=null?`<button onclick="editMistake(${r.id},event)" title="Edit" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:12px;cursor:pointer" onmouseover="this.style.color='var(--accent2)'" onmouseout="this.style.color='rgba(255,255,255,0.3)'"><i class="ti ti-pencil"></i></button><button onclick="deleteMistake(${r.id},event)" title="Delete" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:13px;cursor:pointer" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='rgba(255,255,255,0.3)'">✕</button>`:''}
           </div>`).join('');
     }
-    const mcv = document.getElementById('mistakes-chart');
-    mcv.style.height = '';            // clear any leftover inline height
-    mcv.removeAttribute('style');     // let the global canvas CSS handle width
-    // Taller canvas (via the height attribute → aspect ratio) so every label fits
-    mcv.setAttribute('height', Math.max(95, labels.length * 38));
-    mChart = new Chart(mcv, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [{
-          data,
-          backgroundColor: data.map(d => d > 0 ? 'rgba(229,115,104,0.65)' : 'rgba(255,255,255,0.05)'),
-          borderColor: data.map(d => d > 0 ? '#e57368' : 'rgba(255,255,255,0.1)'),
-          borderWidth: 1,
-          borderRadius: 4,
-          maxBarThickness: 26
-        }]
-      },
-      options: {
-        ...opts,
-        indexAxis: 'y',
-        scales: {
-          x: { ticks: { color: '#888884', stepSize: 1 }, grid: { color: gc }, beginAtZero: true },
-          y: { ticks: { color: '#f0f0ee', font: { size: 12 }, autoSkip: false }, grid: { color: gc } }
-        }
-      }
-    });
   } else {
-    // No mistakes defined yet — show empty state inside the card
-    mChart = null;
-    document.getElementById('mistakes-chart').style.display = 'none';
     const bd0 = document.getElementById('mistakes-breakdown'); if (bd0) bd0.innerHTML = '';
-    const existing = document.getElementById('mistakes-empty-state');
-    if (!existing) {
+    if (!document.getElementById('mistakes-empty-state')) {
       const msg = document.createElement('div');
       msg.id = 'mistakes-empty-state';
       msg.style.cssText = 'text-align:center;padding:40px 20px;color:rgba(255,255,255,0.18);font-size:13px';
