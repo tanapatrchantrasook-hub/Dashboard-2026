@@ -500,7 +500,10 @@ input[type=file]{display:none}
           <div style="font-family:var(--fd);font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text)">Goal Tracker</div>
           <div style="font-size:12px;color:var(--muted);margin-top:4px">Goals to work on — mark them Achieved / Not on each trade you log</div>
         </div>
-        <button class="add-trade-btn" onclick="addGoal()"><i class="ti ti-plus"></i> Add Goal</button>
+        <div style="display:flex;gap:8px">
+          <button class="add-trade-btn" onclick="addGoal('trading')"><i class="ti ti-plus"></i> Trading Goal</button>
+          <button class="add-trade-btn" onclick="addGoal('general')"><i class="ti ti-plus"></i> General Goal</button>
+        </div>
       </div>
       <div class="empty-log" id="goals-empty-msg">No goals yet — hit "Add Goal" to set what you're working on.</div>
       <div id="goals-list" style="display:none;flex-direction:column;gap:10px"></div>
@@ -1070,7 +1073,7 @@ input[type=file]{display:none}
 
     <!-- GOALS -->
     <div class="checklist-wrap" id="trade-goals-wrap">
-      <div class="checklist-title">Goal Tracker — mark goals for this trade</div>
+      <div class="checklist-title">Trading Goals — mark for this trade</div>
       <div style="display:flex;gap:8px;margin-bottom:12px">
         <select class="form-select" id="trade-goal-select" style="flex:1"><option value="">— Select a goal —</option></select>
         <button class="cl-btn" id="goal-add-yes" onclick="markTradeGoal('yes')" style="white-space:nowrap">Achieved</button>
@@ -1666,14 +1669,15 @@ function renderPerformance(){
     const totalMistakes = data.reduce((a,b)=>a+b,0);
     const bd = document.getElementById('mistakes-breakdown');
     if (bd) {
-      const ranked = labels.map((l,i)=>({name:l,count:data[i]})).sort((a,b)=>b.count-a.count);
+      const ranked = labels.map((l,i)=>({name:l,count:data[i],id:(masterMistakes.find(x=>x.name===l)||{}).id})).sort((a,b)=>b.count-a.count);
       const maxC = Math.max(1, ...data);
-      bd.innerHTML = `<div style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin:4px 0 10px;border-top:0.5px solid var(--border);padding-top:12px">Breakdown · ${totalMistakes} total logged</div>` +
+      bd.innerHTML = `<div style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin:4px 0 10px;border-top:0.5px solid var(--border);padding-top:12px">Breakdown · ${totalMistakes} total logged · click ✎ to rename, ✕ to remove</div>` +
         ranked.map(r=>`
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:7px">
             <div style="flex:1;font-size:12px;color:${r.count>0?'var(--text)':'rgba(255,255,255,0.3)'}">${r.name}</div>
             <div style="width:120px;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden"><div style="width:${Math.round(r.count/maxC*100)}%;height:100%;background:${r.count>0?'var(--red)':'transparent'}"></div></div>
             <div style="font-family:var(--fd);font-size:12px;font-weight:700;color:${r.count>0?'var(--red)':'rgba(255,255,255,0.3)'};min-width:60px;text-align:right">${r.count}× ${totalMistakes?'· '+Math.round(r.count/totalMistakes*100)+'%':''}</div>
+            ${r.id!=null?`<button onclick="editMistake(${r.id},event)" title="Edit" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:12px;cursor:pointer" onmouseover="this.style.color='var(--accent2)'" onmouseout="this.style.color='rgba(255,255,255,0.3)'"><i class="ti ti-pencil"></i></button><button onclick="deleteMistake(${r.id},event)" title="Delete" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:13px;cursor:pointer" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='rgba(255,255,255,0.3)'">✕</button>`:''}
           </div>`).join('');
     }
     const mcv = document.getElementById('mistakes-chart');
@@ -1718,12 +1722,13 @@ function renderPerformance(){
     }
   }
 
-  // Goals Achieved
+  // Goals Achieved (Trading Goals — marked per trade)
   const gc2 = document.getElementById('goals-achieved-content');
-  if (!goals.length) {
-    gc2.innerHTML = '<div style="text-align:center;padding:24px;color:rgba(255,255,255,0.18);font-size:13px">No goals set yet — add goals in the Goal Tracker to track them here.</div>';
+  const tradingGoals2 = goals.filter(g=>(g.type||'trading')==='trading');
+  if (!tradingGoals2.length) {
+    gc2.innerHTML = '<div style="text-align:center;padding:24px;color:rgba(255,255,255,0.18);font-size:13px">No trading goals set yet — add goals in the Goal Tracker to track them here.</div>';
   } else {
-    gc2.innerHTML = goals.map(g=>{
+    gc2.innerHTML = tradingGoals2.map(g=>{
       let yes=0, no=0;
       allT.forEach(t=>{ if(t.goalResults){ if(t.goalResults[g.id]==='yes')yes++; else if(t.goalResults[g.id]==='no')no++; } });
       const total = yes+no;
@@ -2029,7 +2034,17 @@ function setupStats(name){
   const _fm = (m) => { const h=Math.floor(m/60), mm=Math.round(m%60); return h===0?mm+'m':(mm===0?h+'h':h+'h '+mm+'m'); };
   const durs = t.map(x => _dm(x.entryTime, x.exitTime)).filter(d => d != null);
   const avgDur = durs.length ? _fm(Math.round(durs.reduce((a,b)=>a+b,0)/durs.length)) : '—';
-  return { winRate: wr, rr: avgRR, trades: n, avgDur };
+  // Common occurrence time = most frequent 30-min entry-time window (BKK) across Journal + TOD
+  const ets = allForSetup.map(x => x.entryTime).filter(e => /^\d{2}:\d{2}$/.test(e||''));
+  let commonTime = '—';
+  if (ets.length) {
+    const bk = {};
+    ets.forEach(e => { const p2=e.split(':'); const mins=(+p2[0])*60+(+p2[1]); const start=Math.floor(mins/30)*30; bk[start]=(bk[start]||0)+1; });
+    const best = Object.keys(bk).map(Number).sort((a,b)=> bk[b]-bk[a] || a-b)[0];
+    const f = mn => String(Math.floor(mn/60)%24).padStart(2,'0')+':'+String(mn%60).padStart(2,'0');
+    commonTime = f(best)+'–'+f(best+30);
+  }
+  return { winRate: wr, rr: avgRR, trades: n, avgDur, commonTime };
 }
 function renderTags(p){
   const locked = lockState.tags !== false; // default locked
@@ -2057,6 +2072,7 @@ function openPlay(id){
     <div class="detail-stat"><div class="detail-stat-label">Avg R:R</div><div class="detail-stat-val val-orange">${st.rr}</div><div class="stat-hint">avg potential · all logs</div></div>
     <div class="detail-stat"><div class="detail-stat-label">Trades</div><div class="detail-stat-val">${st.trades}</div><div class="stat-hint">from trade log</div></div>
     <div class="detail-stat"><div class="detail-stat-label">Avg Duration</div><div class="detail-stat-val val-green">${st.avgDur}</div><div class="stat-hint">all trades</div></div>
+    <div class="detail-stat"><div class="detail-stat-label">Common Time</div><div class="detail-stat-val val-green" style="font-size:18px">${st.commonTime}</div><div class="stat-hint">BKK · most frequent entry</div></div>
     <div class="detail-stat"><div class="detail-stat-label">Grade</div><div class="detail-stat-val val-orange" onclick="makeStatEditable(this,${id},'grade')">${p.grade}</div><div class="stat-hint">click to edit</div></div>`;
   document.getElementById('d-desc-input').value=p.desc||'';
   renderRules(p);
@@ -2258,6 +2274,7 @@ function renderPlaybook(){
             <span class="meta-item win-rate-label"><i class="ti ti-trending-up"></i>${st.winRate} win</span>
             <span class="meta-item"><i class="ti ti-arrows-right-left"></i>${st.rr}</span>
             <span class="meta-item"><i class="ti ti-hash"></i>${st.trades} trades</span>
+            ${st.commonTime&&st.commonTime!=='—'?`<span class="meta-item" title="Most common entry time (BKK)"><i class="ti ti-clock"></i>${st.commonTime}</span>`:''}
             <span class="meta-item" style="margin-left:auto;font-family:var(--fd);color:var(--accent2);pointer-events:none">${(!p.grade||p.grade==='—'||p.grade==='-')?'':p.grade}</span>
             <i class="ti ti-chevron-right" style="color:var(--muted);font-size:16px;margin-left:4px;pointer-events:none"></i>
           </div>
@@ -3136,6 +3153,32 @@ function toggleMistake(id) {
   tradeCheckedMistakes[id] = !tradeCheckedMistakes[id];
   renderMistakesList();
 }
+function _refreshMistakesUI(){
+  renderMistakesList();
+  const perf=document.getElementById('page-perf');
+  if(perf && perf.classList.contains('active') && typeof renderPerformance==='function') renderPerformance();
+}
+function editMistake(id, e){
+  if(e) e.stopPropagation();
+  const m = masterMistakes.find(x=>x.id===id); if(!m) return;
+  const name = prompt('Edit mistake:', m.name);
+  if(name===null) return;
+  const v = name.trim(); if(!v) return;
+  const old = m.name; m.name = v;
+  // keep past trade records labelled consistently so the chart/stats stay accurate
+  [trades, (typeof todTrades!=='undefined'?todTrades:[])].forEach(arr => arr.forEach(t => { if(t.mistakes) t.mistakes = t.mistakes.map(n => n===old ? v : n); }));
+  _refreshMistakesUI();
+  scheduleSave();
+}
+function deleteMistake(id, e){
+  if(e) e.stopPropagation();
+  const m = masterMistakes.find(x=>x.id===id); if(!m) return;
+  if(!confirm('Delete the mistake "'+m.name+'" from your list?\n\nIt stays recorded on past trades but won\'t appear as an option or in the chart anymore.')) return;
+  const i = masterMistakes.findIndex(x=>x.id===id);
+  if(i>-1) masterMistakes.splice(i,1);
+  _refreshMistakesUI();
+  scheduleSave();
+}
 
 function renderMistakesList() {
   const list = document.getElementById('mistakes-list');
@@ -3150,7 +3193,9 @@ function renderMistakesList() {
     return `
     <div class="cl-item" onclick="toggleMistake(${m.id})" style="cursor:pointer;display:flex;align-items:center;gap:10px;transition:background .12s;${sel?'background:rgba(229,115,104,0.12);border-left:2px solid var(--red)':''}" onmouseover="if(!${sel})this.style.background='rgba(255,255,255,0.04)'" onmouseout="if(!${sel})this.style.background='transparent'">
       <span style="width:16px;height:16px;border-radius:50%;border:2px solid ${sel?'var(--red)':'rgba(255,255,255,0.35)'};background:${sel?'var(--red)':'transparent'};flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff">${sel?'✓':''}</span>
-      <div class="cl-label" style="color:${sel?'var(--red)':'var(--text)'};font-weight:${sel?'600':'400'}">${m.name}</div>
+      <div class="cl-label" style="flex:1;color:${sel?'var(--red)':'var(--text)'};font-weight:${sel?'600':'400'}">${m.name}</div>
+      <button onclick="event.stopPropagation();editMistake(${m.id},event)" title="Edit" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:12px;cursor:pointer;flex-shrink:0" onmouseover="this.style.color='var(--accent2)'" onmouseout="this.style.color='rgba(255,255,255,0.3)'"><i class="ti ti-pencil"></i></button>
+      <button onclick="event.stopPropagation();deleteMistake(${m.id},event)" title="Delete" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:13px;cursor:pointer;flex-shrink:0" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='rgba(255,255,255,0.3)'">✕</button>
     </div>`;
   }).join('');
 }
@@ -3178,15 +3223,16 @@ function renderTradeGoals(){
   wrap.style.display='block';
   const sel=document.getElementById('trade-goal-select');
   const list=document.getElementById('trade-goals-list');
-  if(!goals.length){
-    sel.innerHTML='<option value="">— No goals yet —</option>';
+  const tradingGoals=goals.filter(g=>(g.type||'trading')==='trading'); // only Trading Goals are selectable per trade
+  if(!tradingGoals.length){
+    sel.innerHTML='<option value="">— No trading goals yet —</option>';
     sel.disabled=true;
-    list.innerHTML='<div style="font-size:12px;color:rgba(255,255,255,0.2);font-style:italic;padding:8px 0">No goals yet — add what you\'re working on in the Goal Tracker tab.</div>';
+    list.innerHTML='<div style="font-size:12px;color:rgba(255,255,255,0.2);font-style:italic;padding:8px 0">No trading goals yet — add one in the Goal Tracker tab.</div>';
     return;
   }
   sel.disabled=false;
-  // populate dropdown with goals not yet marked
-  sel.innerHTML='<option value="">— Select a goal —</option>'+goals.filter(g=>!(g.id in tradeGoalResults)).map(g=>`<option value="${g.id}">${g.name}</option>`).join('');
+  // populate dropdown with trading goals not yet marked
+  sel.innerHTML='<option value="">— Select a goal —</option>'+tradingGoals.filter(g=>!(g.id in tradeGoalResults)).map(g=>`<option value="${g.id}">${g.name}</option>`).join('');
   // render marked goals list
   const marked=Object.keys(tradeGoalResults);
   if(!marked.length){ list.innerHTML='<div style="font-size:12px;color:rgba(255,255,255,0.2);font-style:italic;padding:8px 0">No goals marked yet — select one above and mark it.</div>'; return; }
@@ -3906,26 +3952,60 @@ function renderWatchlist(mode){
 
 
 // ── GOAL TRACKER ──────────────────────────────────────────────
-function addGoal(){
-  const name = prompt('Goal to work on:');
+function addGoal(type){
+  type = (type==='general') ? 'general' : 'trading';
+  const name = prompt('New '+(type==='general'?'general':'trading')+' goal:');
   if(!name || !name.trim()) return;
-  goals.push({ id: nextGoalId++, name: name.trim() });
+  goals.push({ id: nextGoalId++, name: name.trim(), type, done:false });
   renderGoals();
+}
+function editGoal(id){
+  const g = goals.find(x=>x.id===id); if(!g) return;
+  const name = prompt('Edit goal:', g.name);
+  if(name===null) return;               // cancelled
+  if(!name.trim()) return;
+  g.name = name.trim();
+  renderGoals();
+  scheduleSave();
+}
+function toggleGeneralGoal(id){
+  const g = goals.find(x=>x.id===id); if(!g) return;
+  g.done = !g.done;
+  renderGoals();
+  scheduleSave();
 }
 function removeGoal(id){
   const i = goals.findIndex(g=>g.id===id);
   if(i>-1) goals.splice(i,1);
   renderGoals();
 }
+function goalIsTrading(g){ return (g.type||'trading')==='trading'; }
 function renderGoals(){
   const list=document.getElementById('goals-list'), msg=document.getElementById('goals-empty-msg');
   if(!goals.length){ list.style.display='none'; msg.style.display='block'; renderGoalStats(); return; }
   list.style.display='flex'; msg.style.display='none';
-  list.innerHTML = goals.map(g=>`
+  const trading=goals.filter(goalIsTrading);
+  const general=goals.filter(g=>g.type==='general');
+  const goalRow=(g)=>`
     <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:0.5px solid var(--border2);border-left:2px solid var(--accent);border-radius:0 8px 8px 0;padding:14px 16px">
-      <div style="font-size:13px;color:var(--text);display:flex;align-items:center;gap:10px"><i class="ti ti-target" style="color:var(--accent2)"></i>${g.name}</div>
-      <button onclick="removeGoal(${g.id})" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:14px;cursor:pointer" title="Remove">✕</button>
-    </div>`).join('');
+      <div style="font-size:13px;color:var(--text);display:flex;align-items:center;gap:10px;flex:1;min-width:0">
+        ${g.type==='general'
+          ? `<span onclick="toggleGeneralGoal(${g.id})" title="Mark done" style="width:18px;height:18px;border-radius:4px;border:2px solid ${g.done?'var(--green)':'#ffffff'};background:${g.done?'var(--green)':'rgba(255,255,255,0.06)'};display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;cursor:pointer;flex-shrink:0">${g.done?'✓':''}</span>`
+          : `<i class="ti ti-target" style="color:var(--accent2);flex-shrink:0"></i>`}
+        <span onclick="editGoal(${g.id})" title="Click to edit" style="cursor:pointer;${g.done?'text-decoration:line-through;color:var(--muted)':''}">${g.name}</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
+        <button onclick="editGoal(${g.id})" title="Edit" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:13px;cursor:pointer" onmouseover="this.style.color='var(--accent2)'" onmouseout="this.style.color='rgba(255,255,255,0.3)'"><i class="ti ti-pencil"></i></button>
+        <button onclick="removeGoal(${g.id})" title="Delete" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:14px;cursor:pointer" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='rgba(255,255,255,0.3)'">✕</button>
+      </div>
+    </div>`;
+  const section=(title,sub,arr)=>`
+    <div style="margin-bottom:4px">
+      <div style="font-size:11px;color:var(--accent2);letter-spacing:0.07em;text-transform:uppercase;margin:8px 0 10px">${title} <span style="color:rgba(255,255,255,0.3);text-transform:none;letter-spacing:0;font-size:10px">${sub}</span></div>
+      <div style="display:flex;flex-direction:column;gap:10px">${arr.length?arr.map(goalRow).join(''):'<div style="font-size:12px;color:rgba(255,255,255,0.25);font-style:italic;padding:2px 0">None yet.</div>'}</div>
+    </div>`;
+  list.innerHTML = section('Trading Goals','· marked on each trade in the Trade Journal / Trades of the Day', trading)
+                 + section('General Goals','· checked off here on this page', general);
   renderGoalStats();
 }
 
@@ -3936,9 +4016,10 @@ function renderGoalStats(){
   const canvas=document.getElementById('goal-stats-chart');
   const bd=document.getElementById('goal-stats-breakdown');
   if(!card) return;
-  if(!goals.length){ card.style.display='none'; if(goalChart){goalChart.destroy();goalChart=null;} return; }
+  const tradingGoals=goals.filter(g=>(g.type||'trading')==='trading'); // stats only apply to per-trade (Trading) goals
+  if(!tradingGoals.length){ card.style.display='none'; if(goalChart){goalChart.destroy();goalChart=null;} return; }
   const allT=[...trades, ...(typeof todTrades!=='undefined'?todTrades:[])];
-  const rows=goals.map(g=>{
+  const rows=tradingGoals.map(g=>{
     let yes=0,no=0;
     allT.forEach(t=>{ if(t.goalResults){ if(t.goalResults[g.id]==='yes')yes++; else if(t.goalResults[g.id]==='no')no++; } });
     const total=yes+no;
@@ -4795,7 +4876,7 @@ function drTimerReset() {
 const reportCards = {}; // keyed by 'YYYY-MM-DD'
 let rcCurrentDate = '';
 
-const RC_ROUTINE_ROWS = [
+let RC_ROUTINE_ROWS = [
   { id:'premarket',   time:'Pre Market',   label:'Well rested / enough sleep / Early arrival' },
   { id:'ktm1',        time:'18:00–18:30',  label:'KTM Preparation' },
   { id:'mktprep',     time:'19:00–20:00',  label:'Trading – Market Prep' },
@@ -4806,7 +4887,7 @@ const RC_ROUTINE_ROWS = [
   { id:'journal',     time:'02:00–03:00',  label:'Journal + Recap' },
 ];
 
-const RC_MGMT_ROWS = [
+let RC_MGMT_ROWS = [
   { id:'preplanned',   label:'Pre-planned key levels' },
   { id:'stocksel',     label:'Correct stock selection' },
   { id:'followedplan', label:'Followed trading plan' },
@@ -4820,7 +4901,7 @@ const RC_MGMT_ROWS = [
 const RC_TEXT_SECTIONS = [
   { id:'thesis',    label:'Market Thesis / Trading Plan / Things to focus on today', rows:3 },
   { id:'review',    label:'Trading Journal & Review: Focus / Lessons / Mistakes / Improvements', rows:4 },
-  { id:'missed',    label:'Missed Trades / Reason',                                   rows:3 },
+  { id:'missed',    label:'Missed Trades',                                            rows:3 },
 ];
 
 // Shared list of missed-trade reasons (used in Report Card + Trades of the Day)
@@ -4853,25 +4934,31 @@ function rcGetOrCreate(dateStr) {
 function rcRenderRows() {
   const card = rcGetOrCreate(rcCurrentDate);
 
+  const _ic = (fn,id,icon,col) => `<button onclick="event.stopPropagation();${fn}('${id}')" title="${icon==='✕'?'Delete':'Edit'}" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:${icon==='✕'?'12':'11'}px;cursor:pointer;padding:0 2px" onmouseover="this.style.color='${col}'" onmouseout="this.style.color='rgba(255,255,255,0.3)'">${icon==='✕'?'✕':"<i class='ti ti-pencil'></i>"}</button>`;
+
   // Routine rows
   document.getElementById('rc-routine-rows').innerHTML = RC_ROUTINE_ROWS.map(r => `
-    <div style="display:grid;grid-template-columns:90px 1fr 28px;padding:9px 10px;border-bottom:0.5px solid var(--border);border-right:0.5px solid var(--border2);align-items:center;gap:6px">
-      <div style="font-size:11px;color:var(--muted);font-family:var(--fd)">${r.time}</div>
-      <div style="font-size:12px;color:var(--text);line-height:1.4">${r.label}</div>
-      <div style="text-align:center">
-        <button onclick="rcToggleRoutine('${r.id}')" id="rc-rb-${r.id}" style="width:22px;height:22px;border-radius:4px;border:2px solid ${card.routine[r.id]?'var(--accent)':'#ffffff'};background:${card.routine[r.id]?'var(--accent)':'rgba(255,255,255,0.08)'};cursor:pointer;font-size:13px;color:#fff;display:flex;align-items:center;justify-content:center;margin:auto;transition:all .12s;flex-shrink:0">${card.routine[r.id]?'✓':''}</button>
+    <div style="display:grid;grid-template-columns:84px 1fr auto;padding:9px 10px;border-bottom:0.5px solid var(--border);border-right:0.5px solid var(--border2);align-items:center;gap:6px">
+      <div style="font-size:11px;color:var(--muted);font-family:var(--fd)">${_escHtml(r.time||'')}</div>
+      <div style="font-size:12px;color:var(--text);line-height:1.4">${_escHtml(r.label)}</div>
+      <div style="display:flex;align-items:center;gap:6px">
+        ${_ic('rcEditRoutine',r.id,'✎','var(--accent2)')}${_ic('rcDeleteRoutine',r.id,'✕','var(--red)')}
+        <button onclick="rcToggleRoutine('${r.id}')" id="rc-rb-${r.id}" style="width:22px;height:22px;border-radius:4px;border:2px solid ${card.routine[r.id]?'var(--accent)':'#ffffff'};background:${card.routine[r.id]?'var(--accent)':'rgba(255,255,255,0.08)'};cursor:pointer;font-size:13px;color:#fff;display:flex;align-items:center;justify-content:center;transition:all .12s;flex-shrink:0">${card.routine[r.id]?'✓':''}</button>
       </div>
-    </div>`).join('');
+    </div>`).join('') +
+    `<div style="padding:8px 10px;border-right:0.5px solid var(--border2)"><button onclick="rcAddRoutine()" style="background:transparent;border:0.5px dashed var(--border2);color:var(--muted);border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;font-family:var(--fb);width:100%" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent2)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'">+ Add routine item</button></div>`;
 
   // Management rows
   document.getElementById('rc-mgmt-rows').innerHTML = RC_MGMT_ROWS.map(r => `
-    <div style="display:grid;grid-template-columns:1fr 50px;padding:9px 10px;border-bottom:0.5px solid var(--border);align-items:center;gap:6px">
-      <div style="font-size:12px;color:var(--text)">${r.label}</div>
-      <div style="display:flex;gap:3px;justify-content:center">
+    <div style="display:grid;grid-template-columns:1fr auto;padding:9px 10px;border-bottom:0.5px solid var(--border);align-items:center;gap:6px">
+      <div style="font-size:12px;color:var(--text)">${_escHtml(r.label)}</div>
+      <div style="display:flex;gap:5px;align-items:center;justify-content:flex-end">
+        ${_ic('rcEditMgmt',r.id,'✎','var(--accent2)')}${_ic('rcDeleteMgmt',r.id,'✕','var(--red)')}
         <button onclick="rcSetMgmt('${r.id}','Y')" style="padding:2px 6px;border-radius:3px;border:0.5px solid ${card.mgmt[r.id]==='Y'?'rgba(76,175,133,0.6)':'var(--border2)'};background:${card.mgmt[r.id]==='Y'?'rgba(76,175,133,0.2)':'transparent'};color:${card.mgmt[r.id]==='Y'?'var(--green)':'var(--muted)'};font-size:10px;cursor:pointer;font-family:var(--fd);transition:all .12s">Y</button>
         <button onclick="rcSetMgmt('${r.id}','N')" style="padding:2px 6px;border-radius:3px;border:0.5px solid ${card.mgmt[r.id]==='N'?'rgba(229,115,104,0.6)':'var(--border2)'};background:${card.mgmt[r.id]==='N'?'rgba(229,115,104,0.2)':'transparent'};color:${card.mgmt[r.id]==='N'?'var(--red)':'var(--muted)'};font-size:10px;cursor:pointer;font-family:var(--fd);transition:all .12s">N</button>
       </div>
-    </div>`).join('');
+    </div>`).join('') +
+    `<div style="padding:8px 10px"><button onclick="rcAddMgmt()" style="background:transparent;border:0.5px dashed var(--border2);color:var(--muted);border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;font-family:var(--fb);width:100%" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent2)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'">+ Add management item</button></div>`;
 }
 
 function rcRenderTextSections() {
@@ -4919,7 +5006,7 @@ function rcRenderTextSections() {
     <div style="margin-bottom:18px">
       <div style="font-size:11px;color:var(--accent2);letter-spacing:0.07em;text-transform:uppercase;margin-bottom:7px;border-bottom:0.5px solid var(--border);padding-bottom:5px">${s.label}</div>
       ${extra}
-      <textarea id="rc-txt-${s.id}" class="form-textarea" rows="${s.rows}" style="width:100%;font-size:13px;line-height:1.7" oninput="rcFieldChanged()" placeholder="${s.id==='missed'?'Additional notes...':''}">${card.texts[s.id]||''}</textarea>
+      ${s.id==='missed' ? '' : `<textarea id="rc-txt-${s.id}" class="form-textarea" rows="${s.rows}" style="width:100%;font-size:13px;line-height:1.7" oninput="rcFieldChanged()">${card.texts[s.id]||''}</textarea>`}
     </div>`;}).join('') + `
     <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
       <span style="font-size:12px;color:var(--muted)">Score (auto, /5):</span>
@@ -4987,8 +5074,9 @@ function rcUpdateScores() {
   // 2 pts from routine completion, 2 pts from management Y's, 1 pt from journaling (sections written)
   const routineRatio = RC_ROUTINE_ROWS.length ? routineDone / RC_ROUTINE_ROWS.length : 0;
   const mgmtRatio = RC_MGMT_ROWS.length ? mgmtYes / RC_MGMT_ROWS.length : 0;
-  const writtenCount = RC_TEXT_SECTIONS.filter(s => (card.texts[s.id] || '').trim().length > 2).length;
-  const writtenRatio = RC_TEXT_SECTIONS.length ? writtenCount / RC_TEXT_SECTIONS.length : 0;
+  const journalSecs = RC_TEXT_SECTIONS.filter(s => s.id !== 'missed'); // missed has no text box
+  const writtenCount = journalSecs.filter(s => (card.texts[s.id] || '').trim().length > 2).length;
+  const writtenRatio = journalSecs.length ? writtenCount / journalSecs.length : 0;
   let score = routineRatio * 2 + mgmtRatio * 2 + writtenRatio * 1; // out of 5
   score = Math.round(score * 2) / 2; // nearest 0.5
   // tidy display: drop trailing .0
@@ -5009,14 +5097,14 @@ function rcUpdateScores() {
     else { tone = 'Nothing logged yet for this day.'; headColor = 'var(--muted)'; }
 
     // Build the reason breakdown
-    const reason = `Routine <strong style="color:var(--text)">${routineDone}/${RC_ROUTINE_ROWS.length}</strong> · Management <strong style="color:var(--text)">${mgmtYes}/${RC_MGMT_ROWS.length}</strong> · Journaling <strong style="color:var(--text)">${writtenCount}/${RC_TEXT_SECTIONS.length}</strong> sections written.`;
+    const reason = `Routine <strong style="color:var(--text)">${routineDone}/${RC_ROUTINE_ROWS.length}</strong> · Management <strong style="color:var(--text)">${mgmtYes}/${RC_MGMT_ROWS.length}</strong> · Journaling <strong style="color:var(--text)">${writtenCount}/${journalSecs.length}</strong> sections written.`;
 
     // Targeted advice — weakest area first
     const tips = [];
     if (routineRatio < 0.75) tips.push(`Complete more of your pre-market <strong>routine</strong> — ${RC_ROUTINE_ROWS.length - routineDone} item${(RC_ROUTINE_ROWS.length-routineDone)!==1?'s':''} unticked.`);
     if (mgmtRatio < 0.75) tips.push(`Tighten <strong>trade management</strong> — ${RC_MGMT_ROWS.length - mgmtYes} item${(RC_MGMT_ROWS.length-mgmtYes)!==1?'s':''} not a clean Yes.`);
     if (writtenRatio < 1) {
-      const missing = RC_TEXT_SECTIONS.filter(s => (card.texts[s.id]||'').trim().length <= 2).map(s => s.label.split(/[:\/]/)[0].trim());
+      const missing = journalSecs.filter(s => (card.texts[s.id]||'').trim().length <= 2).map(s => s.label.split(/[:\/]/)[0].trim());
       if (missing.length) tips.push(`Finish journaling: <strong>${missing.slice(0,3).join(', ')}</strong>${missing.length>3?'…':''}.`);
     }
     if (!tips.length && score > 0) tips.push('Everything logged and ticked — keep this consistency.');
@@ -5037,6 +5125,46 @@ function rcToggleRoutine(id) {
   rcUpdateScores();
   rcMarkUnsaved();
   scheduleSave();
+}
+
+// ── Edit / add / delete Daily Routine & Trade Management items ──
+function rcAddRoutine(){
+  const label = prompt('New routine item:'); if(label===null||!label.trim()) return;
+  const time = prompt('Time (optional, e.g. 19:00–20:00):','') || '';
+  RC_ROUTINE_ROWS.push({ id:'r'+Date.now(), time:time.trim(), label:label.trim() });
+  rcRenderRows(); rcUpdateScores(); scheduleSave();
+}
+function rcEditRoutine(id){
+  const r = RC_ROUTINE_ROWS.find(x=>x.id===id); if(!r) return;
+  const label = prompt('Edit routine item:', r.label); if(label===null) return;
+  if(!label.trim()) return;
+  const time = prompt('Time (optional):', r.time||'');
+  r.label = label.trim(); if(time!==null) r.time = time.trim();
+  rcRenderRows(); rcUpdateScores(); scheduleSave();
+}
+function rcDeleteRoutine(id){
+  const r = RC_ROUTINE_ROWS.find(x=>x.id===id); if(!r) return;
+  if(!confirm('Delete routine item "'+r.label+'"?')) return;
+  RC_ROUTINE_ROWS = RC_ROUTINE_ROWS.filter(x=>x.id!==id);
+  rcRenderRows(); rcUpdateScores(); scheduleSave();
+}
+function rcAddMgmt(){
+  const label = prompt('New trade-management item:'); if(label===null||!label.trim()) return;
+  RC_MGMT_ROWS.push({ id:'m'+Date.now(), label:label.trim() });
+  rcRenderRows(); rcUpdateScores(); scheduleSave();
+}
+function rcEditMgmt(id){
+  const r = RC_MGMT_ROWS.find(x=>x.id===id); if(!r) return;
+  const label = prompt('Edit trade-management item:', r.label); if(label===null) return;
+  if(!label.trim()) return;
+  r.label = label.trim();
+  rcRenderRows(); rcUpdateScores(); scheduleSave();
+}
+function rcDeleteMgmt(id){
+  const r = RC_MGMT_ROWS.find(x=>x.id===id); if(!r) return;
+  if(!confirm('Delete management item "'+r.label+'"?')) return;
+  RC_MGMT_ROWS = RC_MGMT_ROWS.filter(x=>x.id!==id);
+  rcRenderRows(); rcUpdateScores(); scheduleSave();
 }
 
 function rcToggleMissedReason(idx) {
@@ -5184,6 +5312,8 @@ function collectData() {
     tgUniverse: tgUniverse,
     hypeSectorList: hypeSectorList,
     customMissedReasons: customMissedReasons,
+    rcRoutineRows: RC_ROUTINE_ROWS,
+    rcMgmtRows: RC_MGMT_ROWS,
     todTrades: todTrades,
     categoriesData: categories.map(cat => ({
       id: cat.id, number: cat.number, title: cat.title,
@@ -5298,6 +5428,9 @@ async function loadSavedData() {
     if (d.customMissedReasons && d.customMissedReasons.length) {
       customMissedReasons.push(...d.customMissedReasons);
     }
+    // Restore edited Daily Routine & Trade Management item lists
+    if (Array.isArray(d.rcRoutineRows) && d.rcRoutineRows.length) RC_ROUTINE_ROWS = d.rcRoutineRows;
+    if (Array.isArray(d.rcMgmtRows) && d.rcMgmtRows.length) RC_MGMT_ROWS = d.rcMgmtRows;
     // Restore Trades of the Day
     if (d.todTrades && d.todTrades.length) {
       todTrades.push(...d.todTrades);
@@ -5444,7 +5577,7 @@ const _origSaveWatch = saveWatch;
 saveWatch = function() { _origSaveWatch(); scheduleSave(); };
 
 const _origAddGoal = addGoal;
-addGoal = function() { _origAddGoal(); scheduleSave(); };
+addGoal = function(type) { _origAddGoal(type); scheduleSave(); };
 
 const _origRemoveGoal = removeGoal;
 removeGoal = function(id) { _origRemoveGoal(id); scheduleSave(); };
