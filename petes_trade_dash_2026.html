@@ -455,6 +455,12 @@ input[type=file]{display:none}
         <div class="chart-card"><div class="chart-title">Avg Reward (R) by Day <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Potential: all trades · Actual: Trade Journal)</span></div><canvas id="rr-chart" height="150"></canvas></div>
         <div class="chart-card" id="mistakes-chart-card"><div class="chart-title">Mistakes Made</div><canvas id="mistakes-chart" height="95"></canvas><div id="mistakes-breakdown" style="margin-top:14px"></div></div>
       </div>
+      <div class="chart-card" id="missed-trades-card" style="margin-top:14px">
+        <div class="chart-title">Missed Trades — Reasons <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Trades of the Day)</span></div>
+        <canvas id="missed-chart" height="95"></canvas>
+        <div id="missed-breakdown" style="margin-top:14px"></div>
+        <div id="missed-trades-content" style="margin-top:14px"></div>
+      </div>
       <div class="chart-card" id="setup-perf-card" style="margin-top:14px">
         <div class="chart-title">Setup Performance — Best Win Rate &amp; R:R <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Trade Journal)</span></div>
         <div id="setup-perf-content"></div>
@@ -463,13 +469,15 @@ input[type=file]{display:none}
         <div class="chart-title">Goals Achieved</div>
         <div id="goals-achieved-content"></div>
       </div>
-      <div class="chart-card" id="missed-trades-card" style="margin-top:14px">
-        <div class="chart-title">Missed Trades</div>
-        <div id="missed-trades-content"></div>
-      </div>
       <div class="chart-card" id="breakeven-card" style="margin-top:14px">
         <div class="chart-title">Break-Even Trades <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Trade Journal)</span></div>
         <div id="breakeven-content"></div>
+      </div>
+      <div class="chart-card" id="entry-times-card" style="margin-top:14px">
+        <div class="chart-title">Best Entry Times — Last 30 Days <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(BKK time · Trade Journal + Trades of the Day)</span></div>
+        <div id="entry-times-summary" style="margin-bottom:14px"></div>
+        <canvas id="entry-times-chart" height="120"></canvas>
+        <div id="entry-times-breakdown" style="margin-top:14px"></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px">
         <div class="chart-card">
@@ -496,6 +504,11 @@ input[type=file]{display:none}
       </div>
       <div class="empty-log" id="goals-empty-msg">No goals yet — hit "Add Goal" to set what you're working on.</div>
       <div id="goals-list" style="display:none;flex-direction:column;gap:10px"></div>
+      <div id="goal-stats-card" class="chart-card" style="margin-top:22px;display:none">
+        <div class="chart-title">Goals Achieved — Stats <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(% achieved across logged trades)</span></div>
+        <canvas id="goal-stats-chart" height="95"></canvas>
+        <div id="goal-stats-breakdown" style="margin-top:14px"></div>
+      </div>
     </div>
   </div>
   <!-- NEWS & CATALYST -->
@@ -1178,7 +1191,7 @@ function switchPage(key){
     setTimeout(renderBreakEven,66);
     setTimeout(()=>{renderSessionStats(trades,'session-stats-journal');renderSessionStats(todTrades,'session-stats-tod');},70);
   }
-  if(key==='goals')renderGoals();
+  if(key==='goals')setTimeout(renderGoals,50);
   if(key==='news'){renderWatchlist('daily');renderWatchlist('weekly');}
   if(key==='psychology')initTradeMgmtDropdown();
 }
@@ -1724,6 +1737,81 @@ function renderPerformance(){
       </div>`;
     }).join('');
   }
+  if (typeof renderEntryTimes === 'function') renderEntryTimes();
+}
+
+// Best/worst ENTRY TIMES over the last 30 days, from Trade Journal + Trades of the Day (BKK time)
+let entryChart = null;
+function renderEntryTimes(){
+  const summary=document.getElementById('entry-times-summary');
+  const canvas=document.getElementById('entry-times-chart');
+  const bd=document.getElementById('entry-times-breakdown');
+  if(!summary||!canvas||!bd) return;
+  // last 30 days by trading date
+  const today = (typeof drToday==='function') ? drToday() : new Date().toISOString().split('T')[0];
+  const cutoff = new Date(today+'T12:00:00'); cutoff.setDate(cutoff.getDate()-30);
+  const cutoffISO = cutoff.toISOString().split('T')[0];
+  const allT=[...trades, ...(typeof todTrades!=='undefined'?todTrades:[])];
+  const rel = allT.filter(t => t.date && t.date>=cutoffISO && /^\d{2}:\d{2}$/.test(t.entryTime||'') && (t.wl==='W'||t.wl==='L'));
+  if(!rel.length){
+    if(entryChart){entryChart.destroy();entryChart=null;}
+    canvas.style.display='none';
+    summary.innerHTML='';
+    bd.innerHTML='<div style="text-align:center;padding:24px;color:rgba(255,255,255,0.18);font-size:13px">No timed win/loss trades in the last 30 days yet. Log entry times and W/L to see your best entry windows.</div>';
+    return;
+  }
+  // 30-minute buckets
+  const SIZE=30, buckets={};
+  rel.forEach(t=>{
+    const m=t.entryTime.split(':'); const mins=(+m[0])*60+(+m[1]);
+    const start=Math.floor(mins/SIZE)*SIZE;
+    if(!buckets[start]) buckets[start]={start, win:0, loss:0};
+    if(t.wl==='W') buckets[start].win++; else buckets[start].loss++;
+  });
+  const fmtT = mn => String(Math.floor(mn/60)%24).padStart(2,'0')+':'+String(mn%60).padStart(2,'0');
+  const arr = Object.values(buckets).sort((a,b)=>a.start-b.start).map(b=>{
+    const total=b.win+b.loss; return {...b, total, span:fmtT(b.start)+'–'+fmtT(b.start+SIZE), wr: total?Math.round((b.win/total)*100):0};
+  });
+  // Best window = most wins (tie-break: higher win rate). Worst = most losses (tie-break: lower win rate).
+  const best=[...arr].filter(b=>b.win>0).sort((a,b)=> b.win-a.win || b.wr-a.wr)[0];
+  const worst=[...arr].filter(b=>b.loss>0).sort((a,b)=> b.loss-a.loss || a.wr-b.wr)[0];
+  summary.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    <div style="background:rgba(76,175,133,0.10);border:0.5px solid rgba(76,175,133,0.35);border-radius:8px;padding:12px 14px">
+      <div style="font-size:10px;color:var(--green);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px">✅ Best window to enter</div>
+      ${best?`<div style="font-family:var(--fd);font-size:18px;font-weight:700;color:var(--green)">${best.span}</div><div style="font-size:12px;color:var(--muted);margin-top:3px">${best.win} win${best.win!==1?'s':''} · ${best.wr}% win rate (${best.total} trade${best.total!==1?'s':''})</div>`:'<div style="font-size:13px;color:var(--muted)">—</div>'}
+    </div>
+    <div style="background:rgba(229,115,104,0.10);border:0.5px solid rgba(229,115,104,0.35);border-radius:8px;padding:12px 14px">
+      <div style="font-size:10px;color:var(--red);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px">⚠️ Watch out — most losses</div>
+      ${worst?`<div style="font-family:var(--fd);font-size:18px;font-weight:700;color:var(--red)">${worst.span}</div><div style="font-size:12px;color:var(--muted);margin-top:3px">${worst.loss} loss${worst.loss!==1?'es':''} · ${worst.wr}% win rate (${worst.total} trade${worst.total!==1?'s':''})</div>`:'<div style="font-size:13px;color:var(--muted)">—</div>'}
+    </div>
+  </div>`;
+  // Stacked bar chart: wins (green) + losses (red) per time bucket
+  const labels=arr.map(b=>fmtT(b.start));
+  canvas.style.display='';
+  canvas.removeAttribute('style');
+  canvas.setAttribute('height', 120);
+  if(entryChart) entryChart.destroy();
+  entryChart=new Chart(canvas,{
+    type:'bar',
+    data:{labels,datasets:[
+      {label:'Wins',data:arr.map(b=>b.win),backgroundColor:'rgba(76,175,133,0.7)',borderColor:'#4caf85',borderWidth:1,borderRadius:3,stack:'s'},
+      {label:'Losses',data:arr.map(b=>b.loss),backgroundColor:'rgba(229,115,104,0.7)',borderColor:'#e57368',borderWidth:1,borderRadius:3,stack:'s'}
+    ]},
+    options:{responsive:true,maintainAspectRatio:true,
+      plugins:{legend:{display:true,labels:{color:'#888884',font:{size:11}}},tooltip:{callbacks:{
+        title:(items)=>{const b=arr[items[0].dataIndex];return b.span;},
+        afterBody:(items)=>{const b=arr[items[0].dataIndex];return `Win rate: ${b.wr}% (${b.win}W / ${b.loss}L)`;}
+      }}},
+      scales:{x:{stacked:true,ticks:{color:'#888884',font:{size:10},maxRotation:90,minRotation:0},grid:{color:'rgba(255,255,255,0.05)'}},y:{stacked:true,ticks:{color:'#888884',stepSize:1},grid:{color:'rgba(255,255,255,0.05)'},beginAtZero:true}}}
+  });
+  // Breakdown table
+  bd.innerHTML = `<div style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin:4px 0 10px;border-top:0.5px solid var(--border);padding-top:12px">By 30-min window · ${rel.length} timed trade${rel.length!==1?'s':''} (last 30 days)</div>`+
+    arr.map(b=>`
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:7px">
+        <div style="flex:0 0 110px;font-family:var(--fd);font-size:12px;color:var(--text)">${b.span}</div>
+        <div style="flex:1;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;display:flex"><div style="width:${b.total?Math.round(b.win/b.total*100):0}%;height:100%;background:var(--green)"></div><div style="width:${b.total?Math.round(b.loss/b.total*100):0}%;height:100%;background:var(--red)"></div></div>
+        <div style="font-family:var(--fd);font-size:12px;font-weight:700;color:${b.wr>=50?'var(--green)':'var(--red)'};min-width:120px;text-align:right">${b.wr}% · ${b.win}W/${b.loss}L</div>
+      </div>`).join('');
 }
 
 // ── PLAYBOOK ──────────────────────────────────────────────────
@@ -2888,7 +2976,7 @@ initTradeMgmtDropdown();
 <!-- STUDY MODAL -->
 <div class="modal-overlay" id="study-modal">
   <div class="modal">
-    <div class="modal-title">Add Study Entry <button class="modal-close" onclick="closeStudyModal()">×</button></div>
+    <div class="modal-title"><span id="study-modal-title-text">Add Study Entry</span> <button class="modal-close" onclick="closeStudyModal()">×</button></div>
     <div class="form-grid">
       <div class="form-group"><div class="form-label">Topic</div><input type="text" class="form-input" id="st-topic" placeholder="e.g. Reading VWAP rejections"></div>
       <div class="form-group">
@@ -2906,6 +2994,7 @@ initTradeMgmtDropdown();
           <option>Other</option>
         </select>
       </div>
+      <div class="form-group full"><div class="form-label">Link (optional)</div><input type="url" class="form-input" id="st-link" placeholder="https://… article, video, tweet, etc."></div>
       <div class="form-group full"><div class="form-label">Details</div><textarea class="form-textarea" id="st-details" placeholder="What did you learn? Key points, examples, takeaways..." style="min-height:120px"></textarea></div>
     </div>
 
@@ -3429,28 +3518,68 @@ function renderSetupPerformance() {
   el.innerHTML = html;
 }
 
+let missedChart = null;
 function renderMissedTradesPerf() {
-  const el = document.getElementById('missed-trades-content');
-  if (!el) return;
-  const missed = todTrades.filter(t => t.missedTrade);
+  const content = document.getElementById('missed-trades-content');
+  const bd = document.getElementById('missed-breakdown');
+  const canvas = document.getElementById('missed-chart');
+  if (!content) return;
+  const missed = (typeof todTrades!=='undefined'?todTrades:[]).filter(t => t.missedTrade);
+
+  // Reason frequency across all missed trades (includes every reason in the shared list + any custom)
+  const counts = {};
+  (typeof allMissedReasons==='function'?allMissedReasons():[]).forEach(r => { counts[r] = 0; });
+  missed.forEach(t => (t.missedReasons||[]).forEach(r => { counts[r] = (counts[r]||0) + 1; }));
+  const labels = Object.keys(counts);
+  const data = labels.map(l => counts[l]);
+  const totalReasons = data.reduce((a,b)=>a+b,0);
+
   if (!missed.length) {
-    el.innerHTML = '<div style="text-align:center;padding:24px;color:rgba(255,255,255,0.18);font-size:13px">No missed trades logged yet.</div>';
+    if (missedChart) { missedChart.destroy(); missedChart = null; }
+    if (canvas) canvas.style.display = 'none';
+    if (bd) bd.innerHTML = '';
+    content.innerHTML = '<div style="text-align:center;padding:24px;color:rgba(255,255,255,0.18);font-size:13px">No missed trades logged yet.</div>';
     return;
   }
 
-  // Reason frequency summary across all missed trades (includes custom reasons)
-  const reasonCounts = {};
-  missed.forEach(t => (t.missedReasons||[]).forEach(r => { reasonCounts[r] = (reasonCounts[r]||0) + 1; }));
-  const totalReasons = Object.values(reasonCounts).reduce((a,b)=>a+b,0);
-  const summary = totalReasons ? `
-    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
-      ${Object.keys(reasonCounts).filter(r=>reasonCounts[r]>0).sort((a,b)=>reasonCounts[b]-reasonCounts[a]).map(r=>`
-        <span style="font-size:11px;font-family:var(--fd);padding:4px 10px;border-radius:5px;background:rgba(229,115,104,0.12);border:0.5px solid rgba(229,115,104,0.35);color:var(--red)">
-          ${r} <span style="color:var(--text);font-weight:700">×${reasonCounts[r]}</span>
-        </span>`).join('')}
-    </div>` : '';
+  // Bar chart (same style as the Mistakes Made chart)
+  if (canvas) {
+    canvas.style.display = '';
+    canvas.removeAttribute('style');
+    canvas.setAttribute('height', Math.max(95, labels.length * 38));
+    if (missedChart) missedChart.destroy();
+    missedChart = new Chart(canvas, {
+      type: 'bar',
+      data: { labels, datasets: [{
+        data,
+        backgroundColor: data.map(d => d > 0 ? 'rgba(229,115,104,0.65)' : 'rgba(255,255,255,0.05)'),
+        borderColor: data.map(d => d > 0 ? '#e57368' : 'rgba(255,255,255,0.1)'),
+        borderWidth: 1, borderRadius: 4, maxBarThickness: 26
+      }] },
+      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#888884', stepSize: 1 }, grid: { color: 'rgba(255,255,255,0.05)' }, beginAtZero: true },
+          y: { ticks: { color: '#f0f0ee', font: { size: 12 }, autoSkip: false }, grid: { color: 'rgba(255,255,255,0.05)' } }
+        } }
+    });
+  }
 
-  el.innerHTML = summary + `
+  // Ranked breakdown (same style as Mistakes)
+  if (bd) {
+    const ranked = labels.map((l,i)=>({name:l,count:data[i]})).sort((a,b)=>b.count-a.count);
+    const maxC = Math.max(1, ...data);
+    bd.innerHTML = `<div style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin:4px 0 10px;border-top:0.5px solid var(--border);padding-top:12px">Breakdown · ${totalReasons} total logged · ${missed.length} missed trade${missed.length!==1?'s':''}</div>` +
+      ranked.map(r=>`
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:7px">
+          <div style="flex:1;font-size:12px;color:${r.count>0?'var(--text)':'rgba(255,255,255,0.3)'}">${r.name}</div>
+          <div style="width:120px;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden"><div style="width:${Math.round(r.count/maxC*100)}%;height:100%;background:${r.count>0?'var(--red)':'transparent'}"></div></div>
+          <div style="font-family:var(--fd);font-size:12px;font-weight:700;color:${r.count>0?'var(--red)':'rgba(255,255,255,0.3)'};min-width:60px;text-align:right">${r.count}× ${totalReasons?'· '+Math.round(r.count/totalReasons*100)+'%':''}</div>
+        </div>`).join('');
+  }
+
+  // Detail table
+  content.innerHTML = `
     <table class="log-table" style="margin-top:4px">
       <thead><tr><th>Date</th><th>Ticker</th><th>Missed Trade Reason(s)</th></tr></thead>
       <tbody>${missed.map(t => `<tr>
@@ -3723,23 +3852,34 @@ function removeHype(i) {
 // ── WATCHLISTS ────────────────────────────────────────────────
 const watchlists = { daily: [], weekly: [] };
 let watchMode = 'daily';
-function openWatchModal(mode){
+let watchEditIndex = null; // null = adding new; number = editing that row
+function openWatchModal(mode, editIndex){
   watchMode = mode;
-  document.getElementById('watch-modal-title').innerHTML = `Add to ${mode==='daily'?'Daily':'Weekly'} Watchlist <button class="modal-close" onclick="closeWatchModal()">×</button>`;
-  ['w-ticker','w-levels','w-notes'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('w-bias').value='';
+  watchEditIndex = (editIndex != null && editIndex >= 0) ? editIndex : null;
+  const w = (watchEditIndex != null) ? watchlists[mode][watchEditIndex] : null;
+  document.getElementById('watch-modal-title').innerHTML = `${w?'Edit':'Add to'} ${mode==='daily'?'Daily':'Weekly'} Watchlist <button class="modal-close" onclick="closeWatchModal()">×</button>`;
+  document.getElementById('w-ticker').value = w ? (w.ticker||'') : '';
+  document.getElementById('w-levels').value = (w && w.levels && w.levels!=='—') ? w.levels : '';
+  document.getElementById('w-notes').value  = (w && w.notes  && w.notes!=='—')  ? w.notes  : '';
+  document.getElementById('w-bias').value   = (w && w.bias   && w.bias!=='—')   ? w.bias   : '';
   document.getElementById('watch-modal').classList.add('open');
 }
-function closeWatchModal(){ document.getElementById('watch-modal').classList.remove('open'); }
+function closeWatchModal(){ watchEditIndex = null; document.getElementById('watch-modal').classList.remove('open'); }
 function saveWatch(){
   const ticker=document.getElementById('w-ticker').value.trim().toUpperCase();
   if(!ticker){ alert('Please enter a ticker.'); return; }
-  watchlists[watchMode].push({
+  const entry={
     ticker,
     bias:document.getElementById('w-bias').value||'—',
     levels:document.getElementById('w-levels').value.trim()||'—',
     notes:document.getElementById('w-notes').value.trim()||'—'
-  });
+  };
+  if(watchEditIndex != null && watchlists[watchMode][watchEditIndex]){
+    watchlists[watchMode][watchEditIndex] = entry; // update existing
+  } else {
+    watchlists[watchMode].push(entry);             // add new
+  }
+  watchEditIndex = null;
   closeWatchModal();
   renderWatchlist(watchMode);
 }
@@ -3754,12 +3894,12 @@ function renderWatchlist(mode){
   tbl.style.display='table'; msg.style.display='none';
   tbody.innerHTML=list.map((w,i)=>{
     const biasColor=w.bias==='Long'?'var(--green)':w.bias==='Short'?'var(--red)':'var(--muted)';
-    return `<tr>
+    return `<tr onclick="openWatchModal('${mode}',${i})" style="cursor:pointer" title="Click to edit this symbol">
       <td class="td-ticker">${w.ticker}</td>
       <td style="font-family:var(--fd);font-size:12px;color:${biasColor}">${w.bias}</td>
       <td style="font-size:12px">${w.levels}</td>
       <td class="td-setup">${w.notes}</td>
-      <td><button onclick="removeWatch('${mode}',${i})" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:13px;cursor:pointer">✕</button></td>
+      <td><button onclick="event.stopPropagation();removeWatch('${mode}',${i})" title="Delete this symbol" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:13px;cursor:pointer">✕</button></td>
     </tr>`;
   }).join('');
 }
@@ -3779,13 +3919,53 @@ function removeGoal(id){
 }
 function renderGoals(){
   const list=document.getElementById('goals-list'), msg=document.getElementById('goals-empty-msg');
-  if(!goals.length){ list.style.display='none'; msg.style.display='block'; return; }
+  if(!goals.length){ list.style.display='none'; msg.style.display='block'; renderGoalStats(); return; }
   list.style.display='flex'; msg.style.display='none';
   list.innerHTML = goals.map(g=>`
     <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:0.5px solid var(--border2);border-left:2px solid var(--accent);border-radius:0 8px 8px 0;padding:14px 16px">
       <div style="font-size:13px;color:var(--text);display:flex;align-items:center;gap:10px"><i class="ti ti-target" style="color:var(--accent2)"></i>${g.name}</div>
       <button onclick="removeGoal(${g.id})" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:14px;cursor:pointer" title="Remove">✕</button>
     </div>`).join('');
+  renderGoalStats();
+}
+
+// Goal achievement stats (bar chart of % achieved per goal + ranked breakdown) — Goal Tracker page
+let goalChart = null;
+function renderGoalStats(){
+  const card=document.getElementById('goal-stats-card');
+  const canvas=document.getElementById('goal-stats-chart');
+  const bd=document.getElementById('goal-stats-breakdown');
+  if(!card) return;
+  if(!goals.length){ card.style.display='none'; if(goalChart){goalChart.destroy();goalChart=null;} return; }
+  const allT=[...trades, ...(typeof todTrades!=='undefined'?todTrades:[])];
+  const rows=goals.map(g=>{
+    let yes=0,no=0;
+    allT.forEach(t=>{ if(t.goalResults){ if(t.goalResults[g.id]==='yes')yes++; else if(t.goalResults[g.id]==='no')no++; } });
+    const total=yes+no;
+    return {name:g.name, yes, no, total, pct: total?Math.round((yes/total)*100):0};
+  });
+  card.style.display='block';
+  const labels=rows.map(r=>r.name), data=rows.map(r=>r.pct);
+  canvas.removeAttribute('style');
+  canvas.setAttribute('height', Math.max(95, labels.length*38));
+  if(goalChart) goalChart.destroy();
+  goalChart=new Chart(canvas,{
+    type:'bar',
+    data:{labels,datasets:[{data,
+      backgroundColor:rows.map(r=>r.total===0?'rgba(255,255,255,0.05)':r.pct>=50?'rgba(76,175,133,0.65)':'rgba(224,92,42,0.6)'),
+      borderColor:rows.map(r=>r.total===0?'rgba(255,255,255,0.1)':r.pct>=50?'#4caf85':'#e05c2a'),
+      borderWidth:1,borderRadius:4,maxBarThickness:26}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:true,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:(it)=>{const r=rows[it.dataIndex];return r.total?`${r.pct}% achieved (${r.yes} of ${r.total})`:'no trades logged yet';}}}},
+      scales:{x:{min:0,max:100,ticks:{color:'#888884',callback:v=>v+'%'},grid:{color:'rgba(255,255,255,0.05)'}},y:{ticks:{color:'#f0f0ee',font:{size:12},autoSkip:false},grid:{color:'rgba(255,255,255,0.05)'}}}}
+  });
+  bd.innerHTML = `<div style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin:4px 0 10px;border-top:0.5px solid var(--border);padding-top:12px">Per goal · across ${allT.length} logged trade${allT.length!==1?'s':''}</div>`+
+    rows.slice().sort((a,b)=>b.pct-a.pct).map(r=>`
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:7px">
+        <div style="flex:1;font-size:12px;color:var(--text)">${r.name}</div>
+        <div style="width:120px;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden"><div style="width:${r.pct}%;height:100%;background:${r.total===0?'transparent':r.pct>=50?'var(--green)':'var(--accent2)'}"></div></div>
+        <div style="font-family:var(--fd);font-size:12px;font-weight:700;color:${r.total===0?'rgba(255,255,255,0.3)':r.pct>=50?'var(--green)':'var(--accent2)'};min-width:92px;text-align:right">${r.total?`${r.pct}% · ${r.yes}/${r.total}`:'—'}</div>
+      </div>`).join('');
 }
 
 
@@ -3794,15 +3974,30 @@ function renderGoals(){
 const studyList = [];
 let sgImgs = [null,null,null,null];
 
-function openStudyModal(){
-  document.getElementById('st-topic').value='';
-  document.getElementById('st-category').value='';
-  document.getElementById('st-details').value='';
-  sgImgs=[null,null,null,null];
+let studyEditIndex = null; // null = adding new; number = editing that entry
+function openStudyModal(editIndex){
+  studyEditIndex = (editIndex != null && editIndex >= 0) ? editIndex : null;
+  const s = (studyEditIndex != null) ? studyList[studyEditIndex] : null;
+  document.getElementById('study-modal-title-text').textContent = s ? 'Edit Study Entry' : 'Add Study Entry';
+  document.getElementById('st-topic').value    = s ? (s.topic||'') : '';
+  document.getElementById('st-category').value = s ? (s.category && s.category!=='—' ? s.category : '') : '';
+  document.getElementById('st-link').value     = s ? (s.link||'') : '';
+  document.getElementById('st-details').value  = s ? (s.details||'') : '';
+  sgImgs = s ? [...(s.images||[])] : [];
+  while (sgImgs.length < 4) sgImgs.push(null);
+  sgImgs = sgImgs.slice(0,4);
   renderSGModal();
   document.getElementById('study-modal').classList.add('open');
 }
-function closeStudyModal(){ document.getElementById('study-modal').classList.remove('open'); }
+function closeStudyModal(){ studyEditIndex = null; document.getElementById('study-modal').classList.remove('open'); }
+function deleteStudy(i, e){
+  if (e) e.stopPropagation();
+  const s = studyList[i]; if (!s) return;
+  if (!confirm('Delete this study entry?\n\n"'+(s.topic||'')+'"\n\nThis cannot be undone.')) return;
+  studyList.splice(i,1);
+  renderStudy();
+  scheduleSave();
+}
 
 function sgMainClick(){ if(!sgImgs[0])document.getElementById('sgf0').click(); }
 function sgThumbClick(ti){ const slot=ti+1; if(sgImgs[slot]){const tmp=sgImgs[0];sgImgs[0]=sgImgs[slot];sgImgs[slot]=tmp;renderSGModal();}else document.getElementById('sgf'+slot).click(); }
@@ -3818,13 +4013,20 @@ function renderSGModal(){
 function saveStudy(){
   const topic=document.getElementById('st-topic').value.trim();
   if(!topic){alert('Please enter a topic.');return;}
-  studyList.unshift({
+  const entry={
     topic,
     category:document.getElementById('st-category').value||'—',
+    link:document.getElementById('st-link').value.trim(),
     details:document.getElementById('st-details').value.trim(),
     images:[...sgImgs],
-    date:new Date().toISOString().split('T')[0]
-  });
+    date:(studyEditIndex!=null && studyList[studyEditIndex] && studyList[studyEditIndex].date) || new Date().toISOString().split('T')[0]
+  };
+  if(studyEditIndex!=null && studyList[studyEditIndex]){
+    studyList[studyEditIndex]=entry; // update in place (keeps its position & original date)
+  } else {
+    studyList.unshift(entry);
+  }
+  studyEditIndex=null;
   closeStudyModal();
   renderStudy();
 }
@@ -3834,15 +4036,19 @@ function renderStudy(){
   if(!studyList.length){grid.style.display='none';msg.style.display='block';return;}
   grid.style.display='grid';msg.style.display='none';
   grid.innerHTML=studyList.map((s,i)=>`
-    <div style="background:var(--surface);border:0.5px solid var(--border2);border-radius:8px;overflow:hidden;border-left:3px solid var(--accent)">
-      ${s.images[0]?`<img src="${s.images[0]}" onclick="previewStudyImg(${i})" style="width:100%;height:150px;object-fit:cover;cursor:pointer;display:block">`:''}
+    <div onclick="openStudyModal(${i})" title="Click to edit" style="background:var(--surface);border:0.5px solid var(--border2);border-radius:8px;overflow:hidden;border-left:3px solid var(--accent);cursor:pointer">
+      ${s.images&&s.images[0]?`<img src="${s.images[0]}" onclick="event.stopPropagation();previewStudyImg(${i})" style="width:100%;height:150px;object-fit:cover;cursor:zoom-in;display:block">`:''}
       <div style="padding:14px 16px">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
           <div style="font-family:var(--fd);font-size:13px;font-weight:700;color:var(--text)">${s.topic}</div>
           <span class="play-tag" style="white-space:nowrap">${s.category}</span>
         </div>
         ${s.details?`<div style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:8px">${s.details}</div>`:''}
-        <div style="font-size:10px;color:rgba(255,255,255,0.25);font-family:var(--fd)">${fmtDMY(s.date)}${s.images.filter(x=>x).length>1?` · ${s.images.filter(x=>x).length} images`:''}</div>
+        ${s.link?`<a href="${_escAttr(s.link)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--accent2);text-decoration:none;margin-bottom:8px;word-break:break-all"><i class="ti ti-external-link"></i> ${_escHtml(s.link.replace(/^https?:\/\//,'').slice(0,48))}${s.link.replace(/^https?:\/\//,'').length>48?'…':''}</a>`:''}
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div style="font-size:10px;color:rgba(255,255,255,0.25);font-family:var(--fd)">${fmtDMY(s.date)}${(s.images||[]).filter(x=>x).length>1?` · ${(s.images||[]).filter(x=>x).length} images`:''}</div>
+          <button onclick="event.stopPropagation();deleteStudy(${i},event)" title="Delete entry" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:13px;cursor:pointer;padding:2px 6px;border-radius:4px" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='rgba(255,255,255,0.3)'"><i class="ti ti-trash"></i></button>
+        </div>
       </div>
     </div>`).join('');
 }
@@ -4615,7 +4821,6 @@ const RC_TEXT_SECTIONS = [
   { id:'thesis',    label:'Market Thesis / Trading Plan / Things to focus on today', rows:3 },
   { id:'review',    label:'Trading Journal & Review: Focus / Lessons / Mistakes / Improvements', rows:4 },
   { id:'missed',    label:'Missed Trades / Reason',                                   rows:3 },
-  { id:'focus',     label:'Daily / Weekly Focus',                                      rows:2 },
 ];
 
 // Shared list of missed-trade reasons (used in Report Card + Trades of the Day)
@@ -5222,6 +5427,7 @@ saveTrade = function() {
   if (typeof rcPopulateFields === 'function') { try { rcPopulateFields(); } catch(e) {} }
   if (typeof renderSetupPerformance === 'function') renderSetupPerformance();
   if (typeof renderBreakEven === 'function') renderBreakEven();
+  if (typeof renderGoalStats === 'function') renderGoalStats(); // refresh Goal Tracker achievement stats
   renderSessionStats(trades,'session-stats-journal');
   renderSessionStats(todTrades,'session-stats-tod');
   if (typeof updateDailyStopBanner === 'function') updateDailyStopBanner();
