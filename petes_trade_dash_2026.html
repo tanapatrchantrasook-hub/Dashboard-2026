@@ -455,15 +455,14 @@ input[type=file]{display:none}
         <div class="chart-card"><div class="chart-title">Avg Reward (R) by Day <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Potential: all trades · Actual: Trade Journal)</span></div><canvas id="rr-chart" height="150"></canvas></div>
         <div class="chart-card" id="mistakes-chart-card"><div class="chart-title">Mistakes Made</div><div id="mistakes-breakdown" style="margin-top:6px"></div></div>
       </div>
-      <div class="chart-card" id="missed-trades-card" style="margin-top:14px">
-        <div class="chart-title">Missed Trades — Reasons <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Trades of the Day)</span></div>
-        <canvas id="missed-chart" height="95"></canvas>
-        <div id="missed-breakdown" style="margin-top:14px"></div>
-        <div id="missed-trades-content" style="margin-top:14px"></div>
-      </div>
       <div class="chart-card" id="setup-perf-card" style="margin-top:14px">
         <div class="chart-title">Setup Performance — Best Win Rate &amp; R:R <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Trade Journal)</span></div>
         <div id="setup-perf-content"></div>
+      </div>
+      <div class="chart-card" id="missed-trades-card" style="margin-top:14px">
+        <div class="chart-title">Missed Trades — Reasons <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Trades of the Day)</span></div>
+        <div id="missed-breakdown" style="margin-top:6px"></div>
+        <div id="missed-trades-content" style="margin-top:14px"></div>
       </div>
       <div class="chart-card" id="goals-achieved-card" style="margin-top:14px">
         <div class="chart-title">Goals Achieved</div>
@@ -519,12 +518,9 @@ input[type=file]{display:none}
     <div class="tl-page">
       <div class="subtab-bar">
         <div class="subtab active" onclick="switchSubtab(this,'daily-watch')">Daily Watchlist</div>
-        <div class="subtab" onclick="switchSubtab(this,'news-catalyst')">News &amp; Catalyst</div>
-        <div class="subtab" onclick="switchSubtab(this,'hype-sector')">Hype Sector</div>
-        <div class="subtab" onclick="switchSubtab(this,'weekly-watch')">Weekly Watchlist</div>
-        <div class="subtab" onclick="switchSubtab(this,'x-feeds')">𝕏 Feeds</div>
-        <div class="subtab" onclick="switchSubtab(this,'breaking');loadBreakingNews()"><span style="color:#e05c3a">●</span> Breaking</div>
         <div class="subtab" onclick="switchSubtab(this,'live-news');loadLiveNews()">Live News</div>
+        <div class="subtab" onclick="switchSubtab(this,'breaking');loadBreakingNews()"><span style="color:#e05c3a">●</span> Breaking</div>
+        <div class="subtab" onclick="switchSubtab(this,'x-feeds')">𝕏 Feeds</div>
       </div>
 
       <!-- NEWS & CATALYST SUBTAB -->
@@ -540,22 +536,6 @@ input[type=file]{display:none}
         <table class="log-table" id="news-table" style="display:none">
           <thead><tr><th>Date</th><th>Ticker</th><th>Headline</th><th>Catalyst Type</th><th>Strength</th><th>Bias</th><th>PM Move</th></tr></thead>
           <tbody id="news-tbody"></tbody>
-        </table>
-      </div>
-
-      <!-- HYPE SECTOR SUBTAB -->
-      <div class="subtab-content" id="subtab-hype-sector">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
-          <div>
-            <div style="font-family:var(--fd);font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text)">Hype Sector Log</div>
-            <div style="font-size:12px;color:var(--muted);margin-top:4px">Track hot sectors, themes, and rotating hype — with bias and strength</div>
-          </div>
-          <button class="add-trade-btn" onclick="openHypeModal()"><i class="ti ti-plus"></i> Log Sector</button>
-        </div>
-        <div class="empty-log" id="hype-empty-msg">No sectors logged yet — hit "Log Sector" to start.</div>
-        <table class="log-table" id="hype-table" style="display:none">
-          <thead><tr><th>Date</th><th>Sector / Theme</th><th>Leading Tickers</th><th>Catalyst</th><th>Strength</th><th>Bias</th><th>Notes</th><th></th></tr></thead>
-          <tbody id="hype-tbody"></tbody>
         </table>
       </div>
 
@@ -604,6 +584,22 @@ input[type=file]{display:none}
           <thead><tr><th>Ticker</th><th>Bias</th><th>Key Levels</th><th>Catalyst / Notes</th><th></th></tr></thead>
           <tbody id="daily-watch-tbody"></tbody>
         </table>
+
+        <!-- HYPE SECTOR (now a section within Daily Watchlist) -->
+        <div style="margin-top:34px;padding-top:24px;border-top:0.5px solid var(--border2)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
+            <div>
+              <div style="font-family:var(--fd);font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text)">Hype Sector Log</div>
+              <div style="font-size:12px;color:var(--muted);margin-top:4px">Track hot sectors, themes, and rotating hype — with bias and strength</div>
+            </div>
+            <button class="add-trade-btn" onclick="openHypeModal()"><i class="ti ti-plus"></i> Log Sector</button>
+          </div>
+          <div class="empty-log" id="hype-empty-msg">No sectors logged yet — hit "Log Sector" to start.</div>
+          <table class="log-table" id="hype-table" style="display:none">
+            <thead><tr><th>Date</th><th>Sector / Theme</th><th>Leading Tickers</th><th>Catalyst</th><th>Strength</th><th>Bias</th><th>Notes</th><th></th></tr></thead>
+            <tbody id="hype-tbody"></tbody>
+          </table>
+        </div>
       </div>
 
       <!-- WEEKLY WATCHLIST SUBTAB -->
@@ -3531,11 +3527,9 @@ function renderSetupPerformance() {
   el.innerHTML = html;
 }
 
-let missedChart = null;
 function renderMissedTradesPerf() {
   const content = document.getElementById('missed-trades-content');
   const bd = document.getElementById('missed-breakdown');
-  const canvas = document.getElementById('missed-chart');
   if (!content) return;
   const missed = (typeof todTrades!=='undefined'?todTrades:[]).filter(t => t.missedTrade);
 
@@ -3548,41 +3542,16 @@ function renderMissedTradesPerf() {
   const totalReasons = data.reduce((a,b)=>a+b,0);
 
   if (!missed.length) {
-    if (missedChart) { missedChart.destroy(); missedChart = null; }
-    if (canvas) canvas.style.display = 'none';
     if (bd) bd.innerHTML = '';
     content.innerHTML = '<div style="text-align:center;padding:24px;color:rgba(255,255,255,0.18);font-size:13px">No missed trades logged yet.</div>';
     return;
   }
 
-  // Bar chart (same style as the Mistakes Made chart)
-  if (canvas) {
-    canvas.style.display = '';
-    canvas.removeAttribute('style');
-    canvas.setAttribute('height', Math.max(95, labels.length * 38));
-    if (missedChart) missedChart.destroy();
-    missedChart = new Chart(canvas, {
-      type: 'bar',
-      data: { labels, datasets: [{
-        data,
-        backgroundColor: data.map(d => d > 0 ? 'rgba(229,115,104,0.65)' : 'rgba(255,255,255,0.05)'),
-        borderColor: data.map(d => d > 0 ? '#e57368' : 'rgba(255,255,255,0.1)'),
-        borderWidth: 1, borderRadius: 4, maxBarThickness: 26
-      }] },
-      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: true,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { ticks: { color: '#888884', stepSize: 1 }, grid: { color: 'rgba(255,255,255,0.05)' }, beginAtZero: true },
-          y: { ticks: { color: '#f0f0ee', font: { size: 12 }, autoSkip: false }, grid: { color: 'rgba(255,255,255,0.05)' } }
-        } }
-    });
-  }
-
-  // Ranked breakdown (same style as Mistakes)
+  // Ranked breakdown (the bars here are the chart)
   if (bd) {
     const ranked = labels.map((l,i)=>({name:l,count:data[i]})).sort((a,b)=>b.count-a.count);
     const maxC = Math.max(1, ...data);
-    bd.innerHTML = `<div style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin:4px 0 10px;border-top:0.5px solid var(--border);padding-top:12px">Breakdown · ${totalReasons} total logged · ${missed.length} missed trade${missed.length!==1?'s':''}</div>` +
+    bd.innerHTML = `<div style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin:2px 0 12px">${totalReasons} total logged · ${missed.length} missed trade${missed.length!==1?'s':''}</div>` +
       ranked.map(r=>`
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:7px">
           <div style="flex:1;font-size:12px;color:${r.count>0?'var(--text)':'rgba(255,255,255,0.3)'}">${r.name}</div>
