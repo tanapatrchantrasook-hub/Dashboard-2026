@@ -2095,7 +2095,16 @@ function saveSetupName(){
   const p=getPlay(activePlayId); if(!p) return;
   const inp=document.getElementById('d-name-input');
   const val=inp ? inp.value.trim() : '';
-  if(val) p.name=val;
+  if(val && val!==p.name){
+    const old=p.name;
+    p.name=val;
+    // Re-point every trade that used this setup so its stats follow the rename
+    [trades, (typeof todTrades!=='undefined'?todTrades:[])].forEach(arr=>arr.forEach(t=>{
+      if(t.setup===old) t.setup=val;
+      else if(typeof t.setup==='string' && t.setup.indexOf(' + ')>=0){ t.setup=t.setup.split(' + ').map(n=>n.trim()===old?val:n.trim()).join(' + '); }
+      if(Array.isArray(t.setupNames)) t.setupNames=t.setupNames.map(n=>n===old?val:n);
+    }));
+  } else if(val){ p.name=val; }
   renderPlaybook();
   document.getElementById('d-name').textContent=p.name;
   const btn=document.getElementById('d-name-edit-btn');
