@@ -314,6 +314,7 @@ input[type=file]{display:none}
         <div class="subtab" onclick="switchSubtab(this,'daily-rules');renderDailyRules()">Daily Rules</div>
         <div class="subtab" onclick="switchSubtab(this,'trade-journal')">Trade Journal</div>
         <div class="subtab" onclick="switchSubtab(this,'trades-of-day');renderTradesOfDay()">Trades of the Day</div>
+        <div class="subtab" onclick="switchSubtab(this,'weekly-review');renderWeeklyReview()">Weekly Review</div>
       </div>
       <div class="subtab-content active" id="subtab-report-card">
         <!-- REPORT CARD HEADER BAR -->
@@ -434,6 +435,22 @@ input[type=file]{display:none}
           <thead><tr><th>Date</th><th>Chart</th><th>Ticker</th><th>Setup</th><th>Planned RR</th><th>Actual RR</th><th>RR Potential</th><th>W/L</th><th></th></tr></thead>
           <tbody id="log-tbody"></tbody>
         </table>
+      </div>
+
+      <div class="subtab-content" id="subtab-weekly-review">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <i class="ti ti-robot" style="color:var(--accent2);font-size:18px"></i>
+            <div style="font-family:var(--fd);font-size:13px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--text)">Weekly Review</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button onclick="wrShiftWeek(-1)" title="Previous week" style="padding:6px 10px;background:var(--surface);color:var(--text);border:0.5px solid var(--border2);border-radius:6px;font-size:12px;cursor:pointer;font-family:var(--fd)"><i class="ti ti-chevron-left"></i></button>
+            <div id="wr-week-label" style="min-width:200px;text-align:center;font-size:12px;font-family:var(--fd);color:var(--muted)"></div>
+            <button id="wr-next-btn" onclick="wrShiftWeek(1)" title="Next week" style="padding:6px 10px;background:var(--surface);color:var(--text);border:0.5px solid var(--border2);border-radius:6px;font-size:12px;cursor:pointer;font-family:var(--fd)"><i class="ti ti-chevron-right"></i></button>
+            <button onclick="renderWeeklyReview()" style="display:flex;align-items:center;gap:6px;padding:6px 14px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-family:var(--fb);font-weight:600"><i class="ti ti-refresh" style="font-size:13px"></i> Refresh</button>
+          </div>
+        </div>
+        <div id="weekly-review-content"></div>
       </div>
     </div>
   </div>
@@ -841,10 +858,6 @@ input[type=file]{display:none}
                   <button class="modal-save-btn" id="tm-commit-btn" style="width:auto;padding:7px 16px;margin-top:0;font-size:12px" onclick="tmCommit()">Commit to this plan</button>
                   <span id="tm-commit-status" style="font-size:11px;color:var(--muted)"></span>
                 </div>
-              </div>
-              <div class="section-block">
-                <div class="section-label">RR capture — how much have you taken?</div>
-                <div id="tm-rr-checklist" class="cl-items"></div>
               </div>
               <div class="section-block">
                 <div class="section-label">Core reminders</div>
@@ -2704,12 +2717,84 @@ function renderPlaybook2(){
 }
 
 // ── PSYCHOLOGY: TRADE MANAGEMENT ──────────────────────────────
+// Default pre-trade commitments (used to seed a setup the first time it's viewed).
 const tmCommitments = [
   "15m bounce play — wait for at least the 2nd 15m TF candle, with option to trail 1m HL",
   "Target over 1:1 RR only",
   "Target prior resistance range",
   "Target EMA 12"
 ];
+// Per-setup pre-trade commitments, keyed by setup name. Persisted with cloud data.
+// If a setup has no entry yet, it shows the defaults above; editing materialises a per-setup copy.
+let tmCommitStore = {};
+function tmCurrentSetupName(){
+  const id = parseInt(document.getElementById('tm-setup').value);
+  const p = id ? getPlay(id) : null;
+  return p ? p.name : null;
+}
+// For rendering: returns the setup's list, or the shared defaults if it's never been edited.
+function tmGetCommits(name){
+  return Array.isArray(tmCommitStore[name]) ? tmCommitStore[name] : tmCommitments.slice();
+}
+// For mutation: ensures a per-setup copy exists (seeded from defaults) before editing.
+function tmEnsureCommits(name){
+  if (!Array.isArray(tmCommitStore[name])) tmCommitStore[name] = tmCommitments.slice();
+  return tmCommitStore[name];
+}
+// Render just the commitments list (so add/edit/delete doesn't reset the other checklists).
+function tmRenderCommitments(name){
+  const box = document.getElementById('tm-commitments');
+  if (!box) return;
+  const list = tmGetCommits(name);
+  box.innerHTML = list.map((c,i)=>`
+    <div class="cl-item">
+      <div class="cl-label" id="tmc-label-${i}">${c}</div>
+      <div class="cl-btns">
+        <button class="cl-btn" id="tmc-${i}-y" onclick="tmSetYN('commitments',${i},'Y')">✓</button>
+        <button class="cl-btn" id="tmc-${i}-n" onclick="tmSetYN('commitments',${i},'N')">✗</button>
+        <button class="cl-btn" title="Edit" onclick="tmEditCommit(${i})">✎</button>
+        <button class="cl-btn" title="Delete" onclick="tmDeleteCommit(${i})">🗑</button>
+      </div>
+    </div>`).join('')
+    + `<button onclick="tmAddCommit()" style="margin-top:8px;align-self:flex-start;background:transparent;border:0.5px dashed var(--border2);color:var(--muted);border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:var(--fd)">+ Add commitment</button>`;
+}
+function tmEditCommit(i){
+  const name = tmCurrentSetupName(); if (!name) return;
+  const el = document.getElementById('tmc-label-'+i);
+  if (!el) return;
+  el.contentEditable = true; el.focus();
+  try { document.execCommand('selectAll', false, null); } catch(e){}
+  el.onkeydown = (e)=>{ if (e.key==='Enter'){ e.preventDefault(); el.blur(); } };
+  el.onblur = ()=>{
+    el.contentEditable = false;
+    const arr = tmEnsureCommits(name);
+    const txt = el.textContent.trim();
+    if (txt) arr[i] = txt; else arr.splice(i,1);
+    tmState.commitments = {};
+    document.getElementById('tm-commit-bar').style.display='none';
+    scheduleSave();
+    tmRenderCommitments(name);
+  };
+}
+function tmAddCommit(){
+  const name = tmCurrentSetupName(); if (!name) return;
+  const arr = tmEnsureCommits(name);
+  arr.push('New commitment — click ✎ to edit');
+  tmState.commitments = {};
+  document.getElementById('tm-commit-bar').style.display='none';
+  scheduleSave();
+  tmRenderCommitments(name);
+  tmEditCommit(arr.length-1);
+}
+function tmDeleteCommit(i){
+  const name = tmCurrentSetupName(); if (!name) return;
+  const arr = tmEnsureCommits(name);
+  arr.splice(i,1);
+  tmState.commitments = {};
+  document.getElementById('tm-commit-bar').style.display='none';
+  scheduleSave();
+  tmRenderCommitments(name);
+}
 const tmCoreReminders = [
   "Trust the process. You set the target for a reason — before emotion was involved.",
   "Cutting a good trade short turns an A setup into a B result.",
@@ -2746,8 +2831,70 @@ function fmtMins(m){
 const tmTrailing = [
   "Are there 30s or 1m higher lows for me to trail and base my stops upon?"
 ];
-// Setup-specific notes — fill these in tomorrow. Keyed by setup name.
-const tmSetupSpecific = {}; // e.g. { "Gap & Go": ["note 1","note 2"] }
+// Setup-specific notes, keyed by setup name. Persisted with cloud data; editable per setup.
+let tmSetupSpecific = {}; // e.g. { "Gap & Go": ["note 1","note 2"] }
+// For rendering: returns the setup's notes (empty array if none yet).
+function tmGetSpecific(name){
+  return Array.isArray(tmSetupSpecific[name]) ? tmSetupSpecific[name] : [];
+}
+// For mutation: ensures an array exists for this setup before editing.
+function tmEnsureSpecific(name){
+  if (!Array.isArray(tmSetupSpecific[name])) tmSetupSpecific[name] = [];
+  return tmSetupSpecific[name];
+}
+// Render just the setup-specific notes list (so add/edit/delete doesn't reset other checklists).
+function tmRenderSpecific(name){
+  const box = document.getElementById('tm-setup-specific');
+  if (!box) return;
+  const list = tmGetSpecific(name);
+  const addBtn = `<button onclick="tmAddSpecific()" style="margin-top:8px;align-self:flex-start;background:transparent;border:0.5px dashed var(--border2);color:var(--muted);border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:var(--fd)">+ Add note</button>`;
+  const items = list.map((s,i)=>`
+    <div class="cl-item">
+      <div class="cl-label" id="tms-label-${i}">${s}</div>
+      <div class="cl-btns">
+        <button class="cl-btn" id="tms-${i}-y" onclick="tmSetYN('specific',${i},'Y')">✓</button>
+        <button class="cl-btn" id="tms-${i}-n" onclick="tmSetYN('specific',${i},'N')">✗</button>
+        <button class="cl-btn" title="Edit" onclick="tmEditSpecific(${i})">✎</button>
+        <button class="cl-btn" title="Delete" onclick="tmDeleteSpecific(${i})">🗑</button>
+      </div>
+    </div>`).join('');
+  const empty = list.length ? '' : `<div style="font-size:12px;color:rgba(255,255,255,0.25);font-style:italic;padding:8px 0">No setup-specific notes yet for ${name} — add one below.</div>`;
+  box.innerHTML = items + empty + addBtn;
+}
+function tmEditSpecific(i){
+  const name = tmCurrentSetupName(); if (!name) return;
+  const el = document.getElementById('tms-label-'+i);
+  if (!el) return;
+  el.contentEditable = true; el.focus();
+  try { document.execCommand('selectAll', false, null); } catch(e){}
+  el.onkeydown = (e)=>{ if (e.key==='Enter'){ e.preventDefault(); el.blur(); } };
+  el.onblur = ()=>{
+    el.contentEditable = false;
+    const arr = tmEnsureSpecific(name);
+    const txt = el.textContent.trim();
+    if (txt) arr[i] = txt; else arr.splice(i,1);
+    tmState.specific = {};
+    scheduleSave();
+    tmRenderSpecific(name);
+  };
+}
+function tmAddSpecific(){
+  const name = tmCurrentSetupName(); if (!name) return;
+  const arr = tmEnsureSpecific(name);
+  arr.push('New note — click ✎ to edit');
+  tmState.specific = {};
+  scheduleSave();
+  tmRenderSpecific(name);
+  tmEditSpecific(arr.length-1);
+}
+function tmDeleteSpecific(i){
+  const name = tmCurrentSetupName(); if (!name) return;
+  const arr = tmEnsureSpecific(name);
+  arr.splice(i,1);
+  tmState.specific = {};
+  scheduleSave();
+  tmRenderSpecific(name);
+}
 
 const tmState = { reminders:{}, questions:{}, specific:{} };
 
@@ -2779,8 +2926,7 @@ function renderTradeMgmt(){
   document.getElementById('tm-hold').classList.remove('win','active'); document.getElementById('tm-hold').style.color='var(--muted)';
   document.getElementById('tm-exit').classList.remove('loss','active'); document.getElementById('tm-exit').style.color='var(--muted)';
 
-  document.getElementById('tm-commitments').innerHTML = tmCommitments.map((c,i)=>`
-    <div class="cl-item"><div class="cl-label">${c}</div><div class="cl-btns"><button class="cl-btn" id="tmc-${i}-y" onclick="tmSetYN('commitments',${i},'Y')">✓</button><button class="cl-btn" id="tmc-${i}-n" onclick="tmSetYN('commitments',${i},'N')">✗</button></div></div>`).join('');
+  tmRenderCommitments(p.name);
   document.getElementById('tm-commit-bar').style.display='none';
   document.getElementById('tm-commit-status').textContent='';
 
@@ -2806,14 +2952,6 @@ function renderTradeMgmt(){
     <div class="stat-card"><div class="stat-card-label">Avg Actual RR</div><div class="stat-card-val s-orange" style="font-size:20px">${avgActual}</div></div>
     <div class="stat-card"><div class="stat-card-label">Win Rate</div><div class="stat-card-val s-green" style="font-size:20px">${avgWr}</div></div>`;
   document.getElementById('tm-history-note').innerHTML = captureNote;
-
-  // RR capture checklist — milestones toward the historical avg potential (fallback to 1-4R)
-  const target = n && parseFloat(avgPot) >= 1 ? Math.ceil(parseFloat(avgPot)) : 4;
-  const milestones = [];
-  for (let r=1; r<=target; r++) milestones.push(r);
-  tmState.rrCapture = {};
-  document.getElementById('tm-rr-checklist').innerHTML = milestones.map((r,i)=>`
-    <div class="cl-item"><div class="cl-label">Reached ${r}R ${n&&r===target?'<span style="color:#6ecfa0;font-size:11px">(your typical potential)</span>':''}</div><div class="cl-btns"><button class="cl-btn" id="tmrr-${i}-y" onclick="tmSetYN('rrCapture',${i},'Y')">✓</button><button class="cl-btn" id="tmrr-${i}-n" onclick="tmSetYN('rrCapture',${i},'N')">✗</button></div></div>`).join('');
 
   document.getElementById('tm-reminders').innerHTML = tmCoreReminders.map((r,i)=>`
     <div class="cl-item"><div class="cl-label">${r}</div><div class="cl-btns"><button class="cl-btn" id="tmr-${i}-y" onclick="tmSetYN('reminders',${i},'Y')">✓</button><button class="cl-btn" id="tmr-${i}-n" onclick="tmSetYN('reminders',${i},'N')">✗</button></div></div>`).join('');
@@ -2853,18 +2991,12 @@ function renderTradeMgmt(){
   document.getElementById('tm-trailing').innerHTML = tmTrailing.map((t,i)=>`
     <div class="cl-item"><div class="cl-label">${t}</div><div class="cl-btns"><button class="cl-btn" id="tmt-${i}-y" onclick="tmSetYN('trailing',${i},'Y')">✓</button><button class="cl-btn" id="tmt-${i}-n" onclick="tmSetYN('trailing',${i},'N')">✗</button></div></div>`).join('');
 
-  const specific = tmSetupSpecific[p.name] || [];
   document.getElementById('tm-setup-label').textContent = `Setup-specific notes — ${p.name}`;
-  if (specific.length) {
-    document.getElementById('tm-setup-specific').innerHTML = specific.map((s,i)=>`
-      <div class="cl-item"><div class="cl-label">${s}</div><div class="cl-btns"><button class="cl-btn" id="tms-${i}-y" onclick="tmSetYN('specific',${i},'Y')">✓</button><button class="cl-btn" id="tms-${i}-n" onclick="tmSetYN('specific',${i},'N')">✗</button></div></div>`).join('');
-  } else {
-    document.getElementById('tm-setup-specific').innerHTML = `<div style="font-size:12px;color:rgba(255,255,255,0.25);font-style:italic;padding:8px 0">No setup-specific notes yet for ${p.name} — you'll add these tomorrow.</div>`;
-  }
+  tmRenderSpecific(p.name);
 }
 
 // Unified Yes(✓)/No(✗) toggle for all Trade Management checklists
-const TM_PREFIX = { reminders:'tmr', trailing:'tmt', specific:'tms', rrCapture:'tmrr', commitments:'tmc' };
+const TM_PREFIX = { reminders:'tmr', trailing:'tmt', specific:'tms', commitments:'tmc' };
 function tmSetYN(group, i, val){
   if (group==='commitments' && tmState.committed) return; // locked once committed
   if (!tmState[group]) tmState[group] = {};
@@ -2882,11 +3014,12 @@ function tmSetYN(group, i, val){
 }
 
 function tmCommit(){
-  const chosen = tmCommitments.filter((c,i)=>tmState.commitments[i]==='Y');
+  const list = tmGetCommits(tmCurrentSetupName());
+  const chosen = list.filter((c,i)=>tmState.commitments[i]==='Y');
   if (!chosen.length) return;
   tmState.committed = true;
   // lock the boxes visually
-  tmCommitments.forEach((c,i)=>{
+  list.forEach((c,i)=>{
     ['y','n'].forEach(suf=>{ const btn=document.getElementById('tmc-'+i+'-'+suf); if(btn) btn.style.cursor='default'; });
   });
   document.getElementById('tm-commit-btn').style.display='none';
@@ -4428,6 +4561,223 @@ function renderClaudeAnalysis() {
     sectionHead('Recommendations for you') + recs.join('') +
     sectionHead('Ideas to improve this dashboard') + ideasHtml;
 }
+
+// ── WEEKLY REVIEW ─────────────────────────────────────────────
+// Auto-generated review of one trading week (Mon–Sun) with week-over-week
+// comparison and recommendations to work on. Reads the same logged data.
+let wrWeekOffset = 0; // 0 = current week, -1 = last week, ...
+
+function wrWeekStartISO(dateStr){
+  const d = new Date(dateStr + 'T12:00:00');
+  const day = d.getDay();              // 0=Sun .. 6=Sat
+  const diff = (day === 0 ? 6 : day-1); // days back to Monday
+  d.setDate(d.getDate() - diff);
+  return d.toISOString().split('T')[0];
+}
+function wrAddDays(iso, n){
+  const d = new Date(iso + 'T12:00:00');
+  d.setDate(d.getDate() + n);
+  return d.toISOString().split('T')[0];
+}
+function wrFmtRange(startIso){
+  const endIso = wrAddDays(startIso, 6);
+  const f = iso => new Date(iso + 'T12:00:00').toLocaleDateString(undefined,{day:'numeric',month:'short'});
+  return f(startIso) + ' – ' + f(endIso);
+}
+function wrShiftWeek(dir){
+  wrWeekOffset += dir;
+  if (wrWeekOffset > 0) wrWeekOffset = 0; // never review the future
+  renderWeeklyReview();
+}
+
+function renderWeeklyReview(){
+  const el = document.getElementById('weekly-review-content');
+  if (!el) return;
+
+  const today = (typeof drToday === 'function') ? drToday() : new Date().toISOString().split('T')[0];
+  const weekStart   = wrAddDays(wrWeekStartISO(today), wrWeekOffset * 7);
+  const weekEndExcl = wrAddDays(weekStart, 7);   // exclusive upper bound
+  const prevStart   = wrAddDays(weekStart, -7);
+
+  // Header label + disable "next" when already on the current week
+  const lbl = document.getElementById('wr-week-label');
+  if (lbl) lbl.textContent = (wrWeekOffset===0 ? 'This week · ' : (wrWeekOffset===-1 ? 'Last week · ' : '')) + wrFmtRange(weekStart);
+  const nb = document.getElementById('wr-next-btn');
+  if (nb){ const atNow = wrWeekOffset >= 0; nb.disabled = atNow; nb.style.opacity = atNow?'0.4':'1'; nb.style.cursor = atNow?'default':'pointer'; }
+
+  const inWeek = (arr, s, e) => (arr||[]).filter(t => t.date && t.date>=s && t.date<e);
+  const tod = (typeof todTrades!=='undefined' ? todTrades : []);
+  const journalW = inWeek(trades, weekStart, weekEndExcl);
+  const todW     = inWeek(tod, weekStart, weekEndExcl);
+  const allW     = [...journalW, ...todW];
+  const allPrev  = [...inWeek(trades, prevStart, weekStart), ...inWeek(tod, prevStart, weekStart)];
+
+  const card = (color, icon, title, body) => `
+    <div style="background:var(--surface);border:0.5px solid var(--border2);border-left:3px solid ${color};border-radius:8px;padding:14px 18px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <i class="ti ${icon}" style="color:${color};font-size:16px"></i>
+        <div style="font-family:var(--fd);font-size:12px;font-weight:700;letter-spacing:0.04em;color:var(--text)">${title}</div>
+      </div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.65">${body}</div>
+    </div>`;
+  const sectionHead = (t,sub) => `<div style="font-family:var(--fd);font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:var(--accent2);margin:22px 0 12px;padding-bottom:6px;border-bottom:0.5px solid var(--border2)">${t}${sub?`<span style="color:var(--muted);font-size:11px;text-transform:none;letter-spacing:0;margin-left:8px">${sub}</span>`:''}</div>`;
+  const money = v => `${v>=0?'+$':'-$'}${Math.abs(v).toLocaleString()}`;
+
+  const intro = `<div style="background:rgba(224,92,42,0.05);border:0.5px solid rgba(224,92,42,0.2);border-radius:8px;padding:12px 16px;margin-bottom:18px;font-size:12px;color:var(--muted);line-height:1.6">
+      <i class="ti ti-robot" style="color:var(--accent2)"></i> An automatic review of your <strong style="color:var(--text)">${wrFmtRange(weekStart)}</strong> trading week (Trade Journal + Trades of the Day), compared with the week before. Use the arrows to review past weeks. Your own judgement always comes first.
+    </div>`;
+
+  if (allW.length === 0){
+    el.innerHTML = intro + card('var(--muted)','ti-calendar-off','No trades this week',
+      `Nothing logged between <strong>${wrFmtRange(weekStart)}</strong>. Log trades in the Trade Journal or Trades of the Day, or use the ◀ arrow to review an earlier week.`);
+    return;
+  }
+
+  // ── Week stats ──
+  const stat = (a) => {
+    const wins=a.filter(t=>t.wl==='W').length, losses=a.filter(t=>t.wl==='L').length, decided=wins+losses;
+    const pnl=a.reduce((s,t)=>s+(t.pnl||0),0);
+    const wa=a.filter(t=>t.actualRR>0), wp=a.filter(t=>t.rrPot>0);
+    const avgA=wa.length?wa.reduce((s,t)=>s+t.actualRR,0)/wa.length:0;
+    const avgP=wp.length?wp.reduce((s,t)=>s+t.rrPot,0)/wp.length:0;
+    return {n:a.length,wins,losses,decided,wr:decided?Math.round(wins/decided*100):null,pnl,avgA,avgP,capture:(avgA>0&&avgP>0)?Math.round(avgA/avgP*100):null};
+  };
+  const cur = stat(allW), prev = stat(allPrev);
+
+  // delta vs last week
+  const delta = (now, was, kind) => {
+    if (was==null || now==null || !allPrev.length) return '';
+    const d = now - was;
+    const eps = kind==='R' ? 0.05 : (kind==='pct' ? 0.5 : 0.5);
+    if (Math.abs(d) < eps) return ` <span style="color:var(--muted);font-size:11px">(flat vs last wk)</span>`;
+    const up = d>0, col = up?'var(--green)':'var(--red)', arrow = up?'▲':'▼';
+    const val = kind==='money' ? ('$'+Math.abs(d).toLocaleString()) : (kind==='pct' ? (Math.abs(Math.round(d))+'%') : (Math.abs(d).toFixed(1)+'R'));
+    return ` <span style="color:${col};font-size:11px">${arrow} ${val} vs last wk</span>`;
+  };
+
+  const obs = [], recs = [];
+
+  // Snapshot
+  obs.push(card(cur.pnl>=0?'var(--green)':'var(--red)','ti-chart-bar','This week at a glance',
+    `<strong style="color:var(--text)">${cur.n}</strong> trade${cur.n!==1?'s':''} — <span style="color:var(--green)">${cur.wins}W</span> / <span style="color:var(--red)">${cur.losses}L</span>${cur.wr!=null?` (<strong style="color:var(--text)">${cur.wr}% win rate</strong>${delta(cur.wr,prev.wr,'pct')})`:''}.<br>
+     Net PnL <strong style="color:${cur.pnl>=0?'var(--green)':'var(--red)'}">${money(cur.pnl)}</strong>${delta(cur.pnl,prev.pnl,'money')}.${cur.capture!=null?`<br>Reward capture <strong style="color:var(--text)">${cur.capture}%</strong> (avg ${cur.avgA.toFixed(1)}R of ${cur.avgP.toFixed(1)}R)${delta(cur.capture,prev.capture,'pct')}.`:''}`));
+
+  // Reward capture rec
+  if (cur.capture!=null && cur.capture<60){
+    recs.push(card('var(--accent2)','ti-bulb','Hold your winners longer',
+      `You captured only <strong style="color:var(--red)">${cur.capture}%</strong> of available reward this week (${cur.avgA.toFixed(1)}R of ${cur.avgP.toFixed(1)}R). Next week, commit to scaling out in thirds and letting a runner reach the target you set before the trade.`));
+  } else if (cur.capture!=null && cur.capture>=80){
+    obs.push(card('var(--green)','ti-check','Excellent reward capture',
+      `You held trades well — capturing <strong style="color:var(--green)">${cur.capture}%</strong> of available reward. Keep doing exactly this.`));
+  }
+
+  // Most active day
+  const byDay = {};
+  allW.forEach(t=>{ if(!t.date) return; (byDay[t.date]=byDay[t.date]||[]).push(t); });
+  const dayEntries = Object.entries(byDay).sort((a,b)=>b[1].length-a[1].length);
+  if (dayEntries.length){
+    const [d, ts] = dayEntries[0];
+    const dPnl = ts.reduce((s,t)=>s+(t.pnl||0),0);
+    obs.push(card('var(--accent2)','ti-calendar','Busiest day',
+      `<strong style="color:var(--text)">${fmtDMY(d)}</strong> was your most active day with <strong>${ts.length}</strong> trade${ts.length!==1?'s':''}, netting <strong style="color:${dPnl>=0?'var(--green)':'var(--red)'}">${money(dPnl)}</strong>. You traded on <strong>${dayEntries.length}</strong> day${dayEntries.length!==1?'s':''} this week.`));
+  }
+
+  // Setup performance this week
+  const setupPerf = [];
+  if (typeof categories!=='undefined' && typeof setupMatch==='function'){
+    categories.forEach(cat=>cat.plays.forEach(p=>{
+      const st = allW.filter(t=>setupMatch(t,p.name));
+      const w=st.filter(t=>t.wl==='W').length, l=st.filter(t=>t.wl==='L').length;
+      if (w+l>=1) setupPerf.push({name:p.name, n:w+l, wins:w, wr:Math.round(w/(w+l)*100), pnl:st.reduce((s,t)=>s+(t.pnl||0),0)});
+    }));
+  }
+  if (setupPerf.length){
+    const best = setupPerf.slice().sort((a,b)=>b.wr-a.wr || b.pnl-a.pnl)[0];
+    const worst = setupPerf.slice().sort((a,b)=>a.wr-b.wr || a.pnl-b.pnl)[0];
+    obs.push(card('var(--accent2)','ti-book','Setups this week',
+      `Best: <strong style="color:var(--green)">${best.name}</strong> (${best.wr}% over ${best.n}).${best.name!==worst.name?` Weakest: <strong style="color:var(--red)">${worst.name}</strong> (${worst.wr}% over ${worst.n}).`:''}`));
+    if (best.name!==worst.name && worst.n>=2 && worst.wr<40){
+      recs.push(card('var(--accent2)','ti-bulb','Tighten or trade smaller',
+        `<strong>${worst.name}</strong> underperformed this week (${worst.wr}% over ${worst.n}). Next week, either trade it smaller, refine its criteria, or skip it and lean into <strong>${best.name}</strong>.`));
+    }
+  }
+
+  // Session performance this week
+  if (typeof SESSIONS!=='undefined' && typeof getSession==='function'){
+    const timed = allW.filter(t=>t.entryTime);
+    if (timed.length>=3){
+      const ss = SESSIONS.map(s=>{
+        const st = timed.filter(t=>getSession(t.entryTime)?.name===s.name);
+        const w=st.filter(t=>t.wl==='W').length, l=st.filter(t=>t.wl==='L').length;
+        return {name:s.name, n:w+l, wr:(w+l)?Math.round(w/(w+l)*100):null};
+      }).filter(s=>s.n>=2);
+      if (ss.length){
+        const best = ss.slice().sort((a,b)=>b.wr-a.wr)[0];
+        const worst = ss.slice().sort((a,b)=>a.wr-b.wr)[0];
+        obs.push(card('var(--accent2)','ti-clock','Session timing',
+          `Best window: <strong style="color:var(--green)">${best.name}</strong> (${best.wr}% over ${best.n}).${best.name!==worst.name?` Weakest: <strong style="color:var(--red)">${worst.name}</strong> (${worst.wr}% over ${worst.n}).`:''}`));
+        if (best.name!==worst.name && worst.wr<40){
+          recs.push(card('var(--accent2)','ti-bulb','Trade your best window',
+            `You were sharper in <strong>${best.name}</strong> this week. Be more selective (or sit out) during <strong>${worst.name}</strong>.`));
+        }
+      }
+    }
+  }
+
+  // Top mistake this week
+  if (typeof masterMistakes!=='undefined' && masterMistakes.length){
+    const counts={};
+    allW.forEach(t=>(t.mistakes||[]).forEach(n=>counts[n]=(counts[n]||0)+1));
+    const ranked = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+    if (ranked.length){
+      obs.push(card('var(--red)','ti-alert-triangle','Most frequent mistake',
+        `<strong style="color:var(--text)">${ranked[0][0]}</strong> showed up in <strong style="color:var(--red)">${ranked[0][1]}</strong> trade${ranked[0][1]!==1?'s':''} this week${ranked.length>1?`, then ${ranked[1][0]} (${ranked[1][1]})`:''}.`));
+      recs.push(card('var(--accent2)','ti-target','Your one focus for next week',
+        `Make avoiding "<strong>${ranked[0][0]}</strong>" your single pre-trade commitment next week. Fixing one leak at a time beats trying to fix everything.`));
+    }
+  }
+
+  // Missed trades this week
+  const missedW = todW.filter(t=>t.missedTrade);
+  if (missedW.length){
+    const rc={};
+    missedW.forEach(t=>(t.missedReasons||[]).forEach(r=>rc[r]=(rc[r]||0)+1));
+    const ranked = Object.entries(rc).sort((a,b)=>b[1]-a[1]);
+    obs.push(card('var(--red)','ti-target-off','Missed trades',
+      `You logged <strong>${missedW.length}</strong> missed trade${missedW.length!==1?'s':''} this week${ranked.length?`, mostly due to <strong style="color:var(--text)">${ranked[0][0]}</strong> (${ranked[0][1]}×)`:''}.`));
+  }
+
+  // Goal adherence this week
+  if (typeof goals!=='undefined' && goals.length){
+    let y=0,n=0;
+    allW.forEach(t=>{ if(t.goalResults) Object.values(t.goalResults).forEach(v=>{ if(v==='yes')y++; else if(v==='no')n++; }); });
+    if (y+n>0){
+      const rate=Math.round(y/(y+n)*100);
+      obs.push(card(rate>=60?'var(--green)':'var(--accent2)','ti-flag',`Goal adherence: ${rate}%`,
+        `You hit your goals <strong style="color:var(--text)">${y}</strong> of <strong>${y+n}</strong> times this week.${rate<50?' Worth tightening next week.':' Nice consistency.'}`));
+    }
+  }
+
+  // Week-over-week headline rec
+  if (allPrev.length){
+    if (cur.wr!=null && prev.wr!=null && cur.wr < prev.wr - 10){
+      recs.push(card('var(--accent2)','ti-bulb','Reset and be selective',
+        `Win rate dropped from <strong>${prev.wr}%</strong> to <strong>${cur.wr}%</strong> week-over-week. Next week, cut size slightly and only take A-grade setups until the edge returns.`));
+    } else if (cur.pnl>0 && cur.wr!=null && cur.wr>=50 && (cur.capture==null || cur.capture>=60)){
+      recs.push(card('var(--green)','ti-check','Repeat what worked',
+        `A solid, disciplined week. Write down the 1–2 things that went right and aim to repeat exactly that next week.`));
+    }
+  }
+
+  if (!recs.length){
+    recs.push(card('var(--green)','ti-check','Keep logging',
+      `Not enough signal to flag anything specific this week. Keep logging consistently — the more trades in a week, the sharper this review gets.`));
+  }
+
+  el.innerHTML = intro +
+    sectionHead('What stood out this week', `${allW.length} trade${allW.length!==1?'s':''}`) + obs.join('') +
+    sectionHead('Work on this next week') + recs.join('');
+}
 </script>
 
 <script>
@@ -5429,6 +5779,8 @@ function collectData() {
     newsList: newsList,
     watchlists: watchlists,
     pbStore: pbStore,
+    tmCommitStore: tmCommitStore,
+    tmSetupSpecific: tmSetupSpecific,
     studyList: studyList,
     reportCards: reportCards,
     dailyRules: dailyRules,
@@ -5515,6 +5867,14 @@ async function loadSavedData() {
     // Restore playbook gallery images
     if (d.pbStore) {
       Object.assign(pbStore, d.pbStore);
+    }
+    // Restore per-setup pre-trade commitments
+    if (d.tmCommitStore) {
+      Object.assign(tmCommitStore, d.tmCommitStore);
+    }
+    // Restore per-setup notes
+    if (d.tmSetupSpecific) {
+      Object.assign(tmSetupSpecific, d.tmSetupSpecific);
     }
     // Restore study list
     if (d.studyList && d.studyList.length) {
