@@ -269,6 +269,8 @@ input[type=file]{display:none}
   </div>
   <div class="nav-item" id="nav-news" onclick="switchPage('news')"><i class="ti ti-news"></i> News &amp; Watchlist</div>
   <div class="nav-divider"></div>
+  <div class="nav-item" id="nav-screener" onclick="switchPage('screener')"><i class="ti ti-filter-search"></i> Stock Screener</div>
+  <div class="nav-divider"></div>
   <div class="nav-item active" id="nav-tradelog" onclick="switchPage('tradelog')"><i class="ti ti-list-details"></i> Daily Report Card &amp; Trade Journal</div>
   <div class="nav-divider"></div>
   <div class="nav-item" id="nav-playbook" onclick="switchPage('playbook')"><i class="ti ti-book"></i> My Playbook &amp; Setups (Personal)</div>
@@ -488,6 +490,38 @@ input[type=file]{display:none}
           <div id="session-stats-tod"></div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- STOCK SCREENER -->
+  <div class="page" id="page-screener">
+    <div class="tl-page">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-family:var(--fd);font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text)">Stock Screener</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px">Live volume &amp; relative-volume (RVOL) for your symbols · green = current above average</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="add-trade-btn" onclick="addScreenerSymbol()"><i class="ti ti-plus"></i> Add Symbol</button>
+          <button class="add-trade-btn" style="background:transparent;border:0.5px solid var(--border2);color:var(--muted)" onclick="loadScreener(true)"><i class="ti ti-refresh"></i> Refresh</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:center;margin-bottom:18px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;font-family:var(--fd)">Timeframe</span>
+          <div id="screener-tf" style="display:flex;gap:4px"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;font-family:var(--fd)">Show columns</span>
+          <div id="screener-cols" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+        </div>
+      </div>
+      <div class="empty-log" id="screener-empty">No symbols yet — hit "Add Symbol" to start screening.</div>
+      <table class="log-table" id="screener-table" style="display:none">
+        <thead id="screener-thead"></thead>
+        <tbody id="screener-tbody"></tbody>
+      </table>
+      <div id="screener-status" style="font-size:11px;color:var(--muted);margin-top:12px;text-align:right;font-family:var(--fd)"></div>
     </div>
   </div>
 
@@ -1161,6 +1195,7 @@ const pageTitles={
   playbook:'MY PLAYBOOK &amp; SETUPS <span style="color:var(--accent)">(PERSONAL)</span>',
   playbook2:'PLAYBOOK &amp; SETUPS <span style="color:var(--accent)">(SECONDARY IDEAS)</span>',
   psychology:'<span style="color:var(--accent)">PSYCHOLOGY</span>',
+  screener:'STOCK <span style="color:var(--accent)">SCREENER</span>',
 };
 let currentTheme='orange';
 function toggleTheme(){
@@ -1191,6 +1226,7 @@ function switchPage(key){
     setTimeout(()=>{renderSessionStats(trades,'session-stats-journal');renderSessionStats(todTrades,'session-stats-tod');},70);
   }
   if(key==='goals')setTimeout(renderGoals,50);
+  if(key==='screener'){ renderScreenerControls(); setTimeout(()=>loadScreener(),30); }
   if(key==='news'){
     // Always open on the Daily Watchlist subtab
     document.querySelectorAll('#page-news .subtab').forEach(t=>t.classList.remove('active'));
@@ -3907,6 +3943,117 @@ function renderWatchlist(mode){
 }
 
 
+// ── STOCK SCREENER ────────────────────────────────────────────
+const screenerSymbols = []; // array of ticker strings
+let screenerTF = '1d';      // '1d' | '60m' | '30m' | '5m'
+const screenerHidden = {};  // { colKey: true } when a column is hidden
+let _lastQuotes = {};       // cache so toggling columns doesn't refetch
+const SCREENER_COLS = [
+  { key:'symbol', label:'Symbol' },
+  { key:'chg',    label:'% Chg' },
+  { key:'avgvol', label:'Avg Volume' },
+  { key:'avgdol', label:'Avg Vol × Price' },
+  { key:'curvol', label:'Current Volume' },
+  { key:'curdol', label:'Current Vol × Price' },
+  { key:'rvol',   label:'RVOL' },
+  { key:'volchart', label:'Volume' },
+];
+const TF_LABEL = { '1d':'Daily', '60m':'1h', '30m':'30m', '5m':'5m' };
+function _fmtBig(n){
+  n = Number(n)||0;
+  if(n>=1e12) return (n/1e12).toFixed(2)+'T';
+  if(n>=1e9)  return (n/1e9).toFixed(2)+'B';
+  if(n>=1e6)  return (n/1e6).toFixed(2)+'M';
+  if(n>=1e3)  return (n/1e3).toFixed(1)+'K';
+  return String(Math.round(n));
+}
+function addScreenerSymbol(){
+  const raw = prompt('Add symbol(s) — separate multiple with commas (e.g. NVDA, AMD, SPY):');
+  if(!raw) return;
+  raw.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean).forEach(sym=>{ if(!screenerSymbols.includes(sym)) screenerSymbols.push(sym); });
+  renderScreener();          // show rows immediately (loading)
+  loadScreener(true);        // then fetch data
+  scheduleSave();
+}
+function removeScreenerSymbol(sym){
+  const i = screenerSymbols.indexOf(sym); if(i>-1) screenerSymbols.splice(i,1);
+  delete _lastQuotes[sym];
+  renderScreener(_lastQuotes);
+  scheduleSave();
+}
+function setScreenerTF(tf){ screenerTF = tf; renderScreenerControls(); loadScreener(true); scheduleSave(); }
+function toggleScreenerCol(key){ screenerHidden[key] = !screenerHidden[key]; renderScreenerControls(); renderScreener(_lastQuotes); scheduleSave(); }
+function renderScreenerControls(){
+  const tfEl=document.getElementById('screener-tf');
+  if(tfEl) tfEl.innerHTML = Object.keys(TF_LABEL).map(k=>`<button onclick="setScreenerTF('${k}')" class="topbar-tag${screenerTF===k?' active':''}" style="cursor:pointer">${TF_LABEL[k]}</button>`).join('');
+  const colEl=document.getElementById('screener-cols');
+  if(colEl) colEl.innerHTML = SCREENER_COLS.map(c=>`<button onclick="toggleScreenerCol('${c.key}')" class="topbar-tag${screenerHidden[c.key]?'':' active'}" style="cursor:pointer" title="Click to ${screenerHidden[c.key]?'show':'hide'}">${screenerHidden[c.key]?'':'✓ '}${c.label}</button>`).join('');
+}
+function _sparkline(vals, up){
+  if(!vals || vals.length<2) return '<span style="color:rgba(255,255,255,0.2);font-size:11px">—</span>';
+  const w=96,h=26,max=Math.max(...vals),min=Math.min(...vals),range=(max-min)||1;
+  const pts=vals.map((x,i)=>{ const px=(i/(vals.length-1))*w; const py=h-1-((x-min)/range)*(h-2); return px.toFixed(1)+','+py.toFixed(1); }).join(' ');
+  const col=up?'var(--green)':'var(--accent2)';
+  const lastX=w, lastY=(h-1-((vals[vals.length-1]-min)/range)*(h-2)).toFixed(1);
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block"><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.5" stroke-linejoin="round"/><circle cx="${lastX}" cy="${lastY}" r="1.8" fill="${col}"/></svg>`;
+}
+function _screenerCell(key,v){
+  const up=v.up, g='color:var(--green);font-weight:700', norm='color:var(--text)';
+  switch(key){
+    case 'symbol': return `<td class="td-ticker">${v.sym}</td>`;
+    case 'chg': {
+      if(!v.prevClose) return `<td style="color:rgba(255,255,255,0.3)">—</td>`;
+      const pct=((v.price-v.prevClose)/v.prevClose)*100;
+      const c=pct>=0?'var(--green)':'var(--red)';
+      return `<td style="font-family:var(--fd);font-weight:700;color:${c}">${pct>=0?'+':''}${pct.toFixed(2)}%</td>`;
+    }
+    case 'avgvol': return `<td style="font-family:var(--fd)">${_fmtBig(v.avgVol)}</td>`;
+    case 'avgdol': return `<td style="font-family:var(--fd)">$${_fmtBig(v.avgVol*v.price)}</td>`;
+    case 'curvol': return `<td style="font-family:var(--fd);${up?g:norm}">${_fmtBig(v.curVol)}</td>`;
+    case 'curdol': return `<td style="font-family:var(--fd);${up?g:norm}">$${_fmtBig(v.curVol*v.price)}</td>`;
+    case 'rvol':   return `<td style="font-family:var(--fd);font-weight:700;color:${v.rvol>=1?'var(--green)':'var(--muted)'}">${v.rvol?v.rvol.toFixed(2)+'×':'—'}</td>`;
+    case 'volchart': return `<td title="Volume over recent ${TF_LABEL[screenerTF]||screenerTF} bars">${_sparkline(v.volSeries, up)}</td>`;
+  }
+  return '';
+}
+function renderScreener(quotes){
+  const tbl=document.getElementById('screener-table'), msg=document.getElementById('screener-empty'), thead=document.getElementById('screener-thead'), tb=document.getElementById('screener-tbody');
+  if(!tbl) return;
+  renderScreenerControls();
+  if(!screenerSymbols.length){ tbl.style.display='none'; msg.style.display='block'; tb.innerHTML=''; thead.innerHTML=''; return; }
+  tbl.style.display='table'; msg.style.display='none';
+  const cols = SCREENER_COLS.filter(c=>!screenerHidden[c.key]);
+  thead.innerHTML = '<tr>'+cols.map(c=>`<th>${c.label}</th>`).join('')+'<th></th></tr>';
+  const rm = sym=>`<td><button onclick="removeScreenerSymbol('${sym}')" title="Remove" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:13px;cursor:pointer">✕</button></td>`;
+  tb.innerHTML = screenerSymbols.map(sym=>{
+    const q = quotes && quotes[sym];
+    if(!q) return `<tr><td colspan="${cols.length}" style="font-size:12px;color:var(--muted)"><span class="td-ticker">${sym}</span> · loading…</td>${rm(sym)}</tr>`;
+    if(q.error) return `<tr><td colspan="${cols.length}" style="font-size:12px"><span class="td-ticker">${sym}</span> · <span style="color:var(--red)">${q.error}</span></td>${rm(sym)}</tr>`;
+    const avgVol=q.avgVol||0, curVol=q.curVol||0, price=q.price||0;
+    const v={ sym, avgVol, curVol, price, prevClose:q.prevClose||0, volSeries:q.volSeries||[], rvol: avgVol?curVol/avgVol:0, up: curVol>avgVol };
+    return '<tr>'+cols.map(c=>_screenerCell(c.key,v)).join('')+rm(sym)+'</tr>';
+  }).join('');
+}
+let _screenerLoading=false;
+async function loadScreener(force){
+  const status=document.getElementById('screener-status');
+  if(!screenerSymbols.length){ renderScreener(); if(status)status.textContent=''; return; }
+  if(_screenerLoading && !force) return;
+  _screenerLoading=true;
+  renderScreener(_lastQuotes); // keep showing last data while refreshing
+  if(status) status.textContent='Fetching live data ('+(TF_LABEL[screenerTF]||screenerTF)+')…';
+  const quotes={};
+  await Promise.all(screenerSymbols.map(async sym=>{
+    try{ const r=await fetch('/api/quote?symbol='+encodeURIComponent(sym)+'&tf='+encodeURIComponent(screenerTF)); quotes[sym]=await r.json(); }
+    catch(e){ quotes[sym]={symbol:sym,error:'offline'}; }
+  }));
+  _lastQuotes=quotes;
+  renderScreener(quotes);
+  if(status) status.textContent=(TF_LABEL[screenerTF]||screenerTF)+' · updated '+new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  _screenerLoading=false;
+}
+
+
 // ── GOAL TRACKER ──────────────────────────────────────────────
 function addGoal(type){
   type = (type==='general') ? 'general' : 'trading';
@@ -5290,6 +5437,9 @@ function collectData() {
     tgUniverse: tgUniverse,
     hypeSectorList: hypeSectorList,
     customMissedReasons: customMissedReasons,
+    screenerSymbols: screenerSymbols,
+    screenerTF: screenerTF,
+    screenerHidden: screenerHidden,
     rcRoutineRows: RC_ROUTINE_ROWS,
     rcMgmtRows: RC_MGMT_ROWS,
     todTrades: todTrades,
@@ -5409,6 +5559,10 @@ async function loadSavedData() {
     // Restore edited Daily Routine & Trade Management item lists
     if (Array.isArray(d.rcRoutineRows) && d.rcRoutineRows.length) RC_ROUTINE_ROWS = d.rcRoutineRows;
     if (Array.isArray(d.rcMgmtRows) && d.rcMgmtRows.length) RC_MGMT_ROWS = d.rcMgmtRows;
+    // Restore Stock Screener symbols + preferences
+    if (Array.isArray(d.screenerSymbols) && d.screenerSymbols.length) { screenerSymbols.push(...d.screenerSymbols); }
+    if (d.screenerTF) screenerTF = d.screenerTF;
+    if (d.screenerHidden && typeof d.screenerHidden === 'object') Object.assign(screenerHidden, d.screenerHidden);
     // Restore Trades of the Day
     if (d.todTrades && d.todTrades.length) {
       todTrades.push(...d.todTrades);

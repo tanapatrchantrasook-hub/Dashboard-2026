@@ -161,6 +161,54 @@ app.post('/api/data', async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── STOCK SCREENER QUOTE (Yahoo Finance proxy) ────────────────
+// Returns { symbol, price, avgVol, curVol } for the screener.
+const TF_MAP = {
+  '5m':  { interval: '5m',  range: '1mo' },
+  '30m': { interval: '30m', range: '1mo' },
+  '60m': { interval: '60m', range: '3mo' },
+  '1d':  { interval: '1d',  range: '3mo' }
+};
+async function fetchQuote(symbol, tf) {
+  const cfg = TF_MAP[tf] || TF_MAP['1d'];
+  const url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(symbol) + '?interval=' + cfg.interval + '&range=' + cfg.range;
+  const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+  if (!r.ok) return { symbol, error: 'HTTP ' + r.status };
+  const j = await r.json();
+  const res = j.chart && j.chart.result && j.chart.result[0];
+  if (!res) return { symbol, error: (j.chart && j.chart.error && j.chart.error.description) || 'no data' };
+  const meta = res.meta || {};
+  const q = (res.indicators && res.indicators.quote && res.indicators.quote[0]) || {};
+  const vols = (q.volume || []).filter(v => v != null && v > 0);
+  const closes = (q.close || []).filter(c => c != null);
+  const price = meta.regularMarketPrice || (closes.length ? closes[closes.length - 1] : 0);
+  let curVol;
+  if (tf && tf !== '1d') {
+    curVol = vols.length ? vols[vols.length - 1] : 0;      // intraday: latest bar's volume
+  } else {
+    curVol = meta.regularMarketVolume || (vols.length ? vols[vols.length - 1] : 0); // daily: today's full volume
+  }
+  const hist = vols.slice(0, -1);                          // average of prior bars (exclude the current bar)
+  const avgVol = hist.length ? Math.round(hist.reduce((a, b) => a + b, 0) / hist.length) : 0;
+  // Previous-day close. For the daily chart it's the close before the latest bar (reliable);
+  // for intraday charts use the prior regular-session close from meta.
+  let prevClose;
+  if (tf && tf !== '1d') {
+    prevClose = (meta.previousClose != null ? meta.previousClose : meta.chartPreviousClose) || 0;
+  } else {
+    prevClose = closes.length >= 2 ? closes[closes.length - 2] : (meta.previousClose || meta.chartPreviousClose || 0);
+  }
+  const volSeries = vols.slice(-40);                        // recent bars for a small volume sparkline
+  return { symbol, price, avgVol, curVol, prevClose, volSeries, tf: tf || '1d' };
+}
+app.get('/api/quote', async (req, res) => {
+  const symbol = (req.query.symbol || '').trim().toUpperCase();
+  const tf = (req.query.tf || '1d');
+  if (!symbol) return res.status(400).json({ error: 'no symbol' });
+  try { res.json(await fetchQuote(symbol, tf)); }
+  catch (e) { res.json({ symbol, error: e.message }); }
+});
+
 // Upload an image — returns the URL path to use in the dashboard
 app.post('/api/upload-image', upload.single('image'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
