@@ -4607,10 +4607,9 @@ function renderWeeklyReview(){
 
   const inWeek = (arr, s, e) => (arr||[]).filter(t => t.date && t.date>=s && t.date<e);
   const tod = (typeof todTrades!=='undefined' ? todTrades : []);
-  const journalW = inWeek(trades, weekStart, weekEndExcl);
-  const todW     = inWeek(tod, weekStart, weekEndExcl);
-  const allW     = [...journalW, ...todW];
-  const allPrev  = [...inWeek(trades, prevStart, weekStart), ...inWeek(tod, prevStart, weekStart)];
+  const journalW    = inWeek(trades, weekStart, weekEndExcl);   // real trades taken (Trade Journal)
+  const todW        = inWeek(tod, weekStart, weekEndExcl);      // spotted / missed (not taken)
+  const journalPrev = inWeek(trades, prevStart, weekStart);     // last week's taken trades
 
   const card = (color, icon, title, body) => `
     <div style="background:var(--surface);border:0.5px solid var(--border2);border-left:3px solid ${color};border-radius:8px;padding:14px 18px;margin-bottom:10px">
@@ -4624,10 +4623,10 @@ function renderWeeklyReview(){
   const money = v => `${v>=0?'+$':'-$'}${Math.abs(v).toLocaleString()}`;
 
   const intro = `<div style="background:rgba(224,92,42,0.05);border:0.5px solid rgba(224,92,42,0.2);border-radius:8px;padding:12px 16px;margin-bottom:18px;font-size:12px;color:var(--muted);line-height:1.6">
-      <i class="ti ti-robot" style="color:var(--accent2)"></i> An automatic review of your <strong style="color:var(--text)">${wrFmtRange(weekStart)}</strong> trading week (Trade Journal + Trades of the Day), compared with the week before. Use the arrows to review past weeks. Your own judgement always comes first.
+      <i class="ti ti-robot" style="color:var(--accent2)"></i> An automatic review of your <strong style="color:var(--text)">${wrFmtRange(weekStart)}</strong> trading week. Win rate and PnL reflect your <strong style="color:var(--text)">Trade Journal</strong> (real trades taken); Trades of the Day (spotted/missed) are summarised separately. Compared with the week before — use the arrows to review past weeks. Your own judgement always comes first.
     </div>`;
 
-  if (allW.length === 0){
+  if (journalW.length === 0 && todW.length === 0){
     el.innerHTML = intro + card('var(--muted)','ti-calendar-off','No trades this week',
       `Nothing logged between <strong>${wrFmtRange(weekStart)}</strong>. Log trades in the Trade Journal or Trades of the Day, or use the ◀ arrow to review an earlier week.`);
     return;
@@ -4642,11 +4641,11 @@ function renderWeeklyReview(){
     const avgP=wp.length?wp.reduce((s,t)=>s+t.rrPot,0)/wp.length:0;
     return {n:a.length,wins,losses,decided,wr:decided?Math.round(wins/decided*100):null,pnl,avgA,avgP,capture:(avgA>0&&avgP>0)?Math.round(avgA/avgP*100):null};
   };
-  const cur = stat(allW), prev = stat(allPrev);
+  const cur = stat(journalW), prev = stat(journalPrev);
 
   // delta vs last week
   const delta = (now, was, kind) => {
-    if (was==null || now==null || !allPrev.length) return '';
+    if (was==null || now==null || !journalPrev.length) return '';
     const d = now - was;
     const eps = kind==='R' ? 0.05 : (kind==='pct' ? 0.5 : 0.5);
     if (Math.abs(d) < eps) return ` <span style="color:var(--muted);font-size:11px">(flat vs last wk)</span>`;
@@ -4657,10 +4656,22 @@ function renderWeeklyReview(){
 
   const obs = [], recs = [];
 
-  // Snapshot
-  obs.push(card(cur.pnl>=0?'var(--green)':'var(--red)','ti-chart-bar','This week at a glance',
-    `<strong style="color:var(--text)">${cur.n}</strong> trade${cur.n!==1?'s':''} — <span style="color:var(--green)">${cur.wins}W</span> / <span style="color:var(--red)">${cur.losses}L</span>${cur.wr!=null?` (<strong style="color:var(--text)">${cur.wr}% win rate</strong>${delta(cur.wr,prev.wr,'pct')})`:''}.<br>
-     Net PnL <strong style="color:${cur.pnl>=0?'var(--green)':'var(--red)'}">${money(cur.pnl)}</strong>${delta(cur.pnl,prev.pnl,'money')}.${cur.capture!=null?`<br>Reward capture <strong style="color:var(--text)">${cur.capture}%</strong> (avg ${cur.avgA.toFixed(1)}R of ${cur.avgP.toFixed(1)}R)${delta(cur.capture,prev.capture,'pct')}.`:''}`));
+  // Snapshot — real trades taken (Trade Journal only)
+  if (journalW.length){
+    obs.push(card(cur.pnl>=0?'var(--green)':'var(--red)','ti-chart-bar','This week at a glance (trades taken)',
+      `<strong style="color:var(--text)">${cur.n}</strong> trade${cur.n!==1?'s':''} taken — <span style="color:var(--green)">${cur.wins}W</span> / <span style="color:var(--red)">${cur.losses}L</span>${cur.wr!=null?` (<strong style="color:var(--text)">${cur.wr}% win rate</strong>${delta(cur.wr,prev.wr,'pct')})`:''}.<br>
+       Net PnL <strong style="color:${cur.pnl>=0?'var(--green)':'var(--red)'}">${money(cur.pnl)}</strong>${delta(cur.pnl,prev.pnl,'money')}.${cur.capture!=null?`<br>Reward capture <strong style="color:var(--text)">${cur.capture}%</strong> (avg ${cur.avgA.toFixed(1)}R of ${cur.avgP.toFixed(1)}R)${delta(cur.capture,prev.capture,'pct')}.`:''}`));
+  } else {
+    obs.push(card('var(--muted)','ti-chart-bar','No trades taken this week',
+      `You didn't log any taken trades in your Trade Journal this week${todW.length?` — but you spotted ${todW.length} (see below)`:''}.`));
+  }
+
+  // Trades of the Day — spotted / missed, kept separate from real performance
+  if (todW.length){
+    const tw = stat(todW);
+    obs.push(card('var(--accent2)','ti-eye','Trades of the Day (spotted / missed)',
+      `Logged separately: <strong style="color:var(--text)">${todW.length}</strong> spotted/missed trade${todW.length!==1?'s':''} — <span style="color:var(--green)">${tw.wins}W</span> / <span style="color:var(--red)">${tw.losses}L</span>${tw.wr!=null?` (${tw.wr}% would-have win rate)`:''}. <span style="color:rgba(255,255,255,0.5)">Not counted in the win rate or PnL above.</span>`));
+  }
 
   // Reward capture rec
   if (cur.capture!=null && cur.capture<60){
@@ -4671,9 +4682,9 @@ function renderWeeklyReview(){
       `You held trades well — capturing <strong style="color:var(--green)">${cur.capture}%</strong> of available reward. Keep doing exactly this.`));
   }
 
-  // Most active day
+  // Most active day (trades taken)
   const byDay = {};
-  allW.forEach(t=>{ if(!t.date) return; (byDay[t.date]=byDay[t.date]||[]).push(t); });
+  journalW.forEach(t=>{ if(!t.date) return; (byDay[t.date]=byDay[t.date]||[]).push(t); });
   const dayEntries = Object.entries(byDay).sort((a,b)=>b[1].length-a[1].length);
   if (dayEntries.length){
     const [d, ts] = dayEntries[0];
@@ -4686,7 +4697,7 @@ function renderWeeklyReview(){
   const setupPerf = [];
   if (typeof categories!=='undefined' && typeof setupMatch==='function'){
     categories.forEach(cat=>cat.plays.forEach(p=>{
-      const st = allW.filter(t=>setupMatch(t,p.name));
+      const st = journalW.filter(t=>setupMatch(t,p.name));
       const w=st.filter(t=>t.wl==='W').length, l=st.filter(t=>t.wl==='L').length;
       if (w+l>=1) setupPerf.push({name:p.name, n:w+l, wins:w, wr:Math.round(w/(w+l)*100), pnl:st.reduce((s,t)=>s+(t.pnl||0),0)});
     }));
@@ -4704,36 +4715,51 @@ function renderWeeklyReview(){
 
   // Session performance this week
   if (typeof SESSIONS!=='undefined' && typeof getSession==='function'){
-    const timed = allW.filter(t=>t.entryTime);
+    const timed = journalW.filter(t=>t.entryTime);
     if (timed.length>=3){
       const ss = SESSIONS.map(s=>{
         const st = timed.filter(t=>getSession(t.entryTime)?.name===s.name);
         const w=st.filter(t=>t.wl==='W').length, l=st.filter(t=>t.wl==='L').length;
-        return {name:s.name, n:w+l, wr:(w+l)?Math.round(w/(w+l)*100):null};
+        return {name:s.name, start:s.start, end:s.end, n:w+l, wr:(w+l)?Math.round(w/(w+l)*100):null};
       }).filter(s=>s.n>=2);
       if (ss.length){
         const best = ss.slice().sort((a,b)=>b.wr-a.wr)[0];
         const worst = ss.slice().sort((a,b)=>a.wr-b.wr)[0];
+        // hover a session name to see its BKK time window
+        const sName = (s,col) => `<strong style="color:${col};border-bottom:1px dotted ${col};cursor:help" title="BKK ${s.start}–${s.end}">${s.name}</strong>`;
         obs.push(card('var(--accent2)','ti-clock','Session timing',
-          `Best window: <strong style="color:var(--green)">${best.name}</strong> (${best.wr}% over ${best.n}).${best.name!==worst.name?` Weakest: <strong style="color:var(--red)">${worst.name}</strong> (${worst.wr}% over ${worst.n}).`:''}`));
+          `Best window: ${sName(best,'var(--green)')} (${best.wr}% over ${best.n}).${best.name!==worst.name?` Weakest: ${sName(worst,'var(--red)')} (${worst.wr}% over ${worst.n}).`:''} <span style="color:rgba(255,255,255,0.4);font-size:11px">(hover a session for its BKK time)</span>`));
         if (best.name!==worst.name && worst.wr<40){
           recs.push(card('var(--accent2)','ti-bulb','Trade your best window',
-            `You were sharper in <strong>${best.name}</strong> this week. Be more selective (or sit out) during <strong>${worst.name}</strong>.`));
+            `You were sharper in ${sName(best,'var(--text)')} this week. Be more selective (or sit out) during ${sName(worst,'var(--text)')}.`));
         }
       }
     }
   }
 
-  // Top mistake this week
+  // Mistakes made this week — full ranked breakdown (matches Performance & Stats), with solutions
   if (typeof masterMistakes!=='undefined' && masterMistakes.length){
-    const counts={};
-    allW.forEach(t=>(t.mistakes||[]).forEach(n=>counts[n]=(counts[n]||0)+1));
-    const ranked = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+    const weekTrades = [...journalW, ...todW];
+    const counts = {};
+    masterMistakes.forEach(m=>counts[m.name]=0);
+    weekTrades.forEach(t=>(t.mistakes||[]).forEach(nm=>{ if(counts[nm]!==undefined) counts[nm]++; }));
+    const ranked = Object.entries(counts).map(([name,count])=>({name,count})).filter(r=>r.count>0).sort((a,b)=>b.count-a.count);
+    const totalM = ranked.reduce((s,r)=>s+r.count,0);
     if (ranked.length){
-      obs.push(card('var(--red)','ti-alert-triangle','Most frequent mistake',
-        `<strong style="color:var(--text)">${ranked[0][0]}</strong> showed up in <strong style="color:var(--red)">${ranked[0][1]}</strong> trade${ranked[0][1]!==1?'s':''} this week${ranked.length>1?`, then ${ranked[1][0]} (${ranked[1][1]})`:''}.`));
-      recs.push(card('var(--accent2)','ti-target','Your one focus for next week',
-        `Make avoiding "<strong>${ranked[0][0]}</strong>" your single pre-trade commitment next week. Fixing one leak at a time beats trying to fix everything.`));
+      const maxC = Math.max(1, ...ranked.map(r=>r.count));
+      const bars = ranked.map(r=>`
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <div style="flex:1;font-size:12px;color:var(--text)">${r.name}</div>
+          <div style="width:120px;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden"><div style="width:${Math.round(r.count/maxC*100)}%;height:100%;background:var(--red)"></div></div>
+          <div style="font-family:var(--fd);font-size:12px;font-weight:700;color:var(--red);min-width:64px;text-align:right">${r.count}× · ${Math.round(r.count/totalM*100)}%</div>
+        </div>`).join('');
+      obs.push(card('var(--red)','ti-alert-triangle','Mistakes made this week',
+        `<div style="font-size:11px;color:var(--muted);margin-bottom:10px">${totalM} mistake${totalM!==1?'s':''} logged across ${weekTrades.length} trade${weekTrades.length!==1?'s':''} (Trade Journal + Trades of the Day).</div>${bars}`));
+      // Solutions for the top mistakes
+      const top = ranked.slice(0,2);
+      recs.push(card('var(--accent2)','ti-target','Fix your top mistake'+(top.length>1?'s':''),
+        top.map(r=>`<div style="margin-bottom:8px"><strong style="color:var(--text)">${r.name}</strong> (${r.count}×) — add this to your pre-trade commitment checklist and grade yourself on it specifically. Review each trade where it appeared and write down what triggered it, so you can catch it live next time.</div>`).join('') +
+        `<div style="color:rgba(255,255,255,0.5);font-size:12px">Tackle the top one first — fixing a single leak at a time beats trying to fix everything at once.</div>`));
     }
   }
 
@@ -4750,7 +4776,7 @@ function renderWeeklyReview(){
   // Goal adherence this week
   if (typeof goals!=='undefined' && goals.length){
     let y=0,n=0;
-    allW.forEach(t=>{ if(t.goalResults) Object.values(t.goalResults).forEach(v=>{ if(v==='yes')y++; else if(v==='no')n++; }); });
+    journalW.forEach(t=>{ if(t.goalResults) Object.values(t.goalResults).forEach(v=>{ if(v==='yes')y++; else if(v==='no')n++; }); });
     if (y+n>0){
       const rate=Math.round(y/(y+n)*100);
       obs.push(card(rate>=60?'var(--green)':'var(--accent2)','ti-flag',`Goal adherence: ${rate}%`,
@@ -4759,7 +4785,7 @@ function renderWeeklyReview(){
   }
 
   // Week-over-week headline rec
-  if (allPrev.length){
+  if (journalPrev.length){
     if (cur.wr!=null && prev.wr!=null && cur.wr < prev.wr - 10){
       recs.push(card('var(--accent2)','ti-bulb','Reset and be selective',
         `Win rate dropped from <strong>${prev.wr}%</strong> to <strong>${cur.wr}%</strong> week-over-week. Next week, cut size slightly and only take A-grade setups until the edge returns.`));
@@ -4775,7 +4801,7 @@ function renderWeeklyReview(){
   }
 
   el.innerHTML = intro +
-    sectionHead('What stood out this week', `${allW.length} trade${allW.length!==1?'s':''}`) + obs.join('') +
+    sectionHead('What stood out this week', `${journalW.length} taken${todW.length?` · ${todW.length} spotted`:''}`) + obs.join('') +
     sectionHead('Work on this next week') + recs.join('');
 }
 </script>
