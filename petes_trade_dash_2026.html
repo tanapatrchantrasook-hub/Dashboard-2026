@@ -6191,6 +6191,13 @@ loadSavedData();
 // Re-evaluate the daily stop banner every 5 minutes so it clears automatically
 // when the trading day rolls over at 03:00 BKK (even if the dashboard is left open).
 setInterval(function(){ try { updateDailyStopBanner(); } catch(e){} }, 300000);
+// Stock Screener — auto-refresh live volume/price every 45s while the tab is open
+setInterval(function(){
+  try {
+    const p = document.getElementById('page-screener');
+    if (p && p.classList.contains('active') && typeof screenerSymbols !== 'undefined' && screenerSymbols.length) loadScreener(true);
+  } catch(e){}
+}, 45000);
 </script>
 </body>
 </html>

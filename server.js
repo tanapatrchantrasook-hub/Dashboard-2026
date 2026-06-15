@@ -169,36 +169,51 @@ const TF_MAP = {
   '60m': { interval: '60m', range: '3mo' },
   '1d':  { interval: '1d',  range: '3mo' }
 };
+async function yfChart(symbol, interval, range, pre) {
+  const url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(symbol)
+            + '?interval=' + interval + '&range=' + range + (pre ? '&includePrePost=true' : '');
+  const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+  if (!r.ok) return null;
+  const j = await r.json();
+  return (j.chart && j.chart.result && j.chart.result[0]) || null;
+}
+// The previous *regular-session* close from a daily series — robust across market states.
+// If the last daily bar is today's (forming) bar, use the one before it; otherwise the last bar is the prior day.
+function prevDailyClose(dailyRes) {
+  if (!dailyRes) return 0;
+  const q = (dailyRes.indicators && dailyRes.indicators.quote && dailyRes.indicators.quote[0]) || {};
+  const ts = dailyRes.timestamp || [];
+  const cl = q.close || [];
+  const arr = ts.map((t, i) => ({ t, c: cl[i] })).filter(x => x.c != null);
+  if (!arr.length) return 0;
+  const nowD = new Date().toISOString().slice(0, 10);
+  const lastD = new Date(arr[arr.length - 1].t * 1000).toISOString().slice(0, 10);
+  return (lastD === nowD && arr.length >= 2) ? arr[arr.length - 2].c : arr[arr.length - 1].c;
+}
 async function fetchQuote(symbol, tf) {
   const cfg = TF_MAP[tf] || TF_MAP['1d'];
-  const url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(symbol) + '?interval=' + cfg.interval + '&range=' + cfg.range;
-  const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-  if (!r.ok) return { symbol, error: 'HTTP ' + r.status };
-  const j = await r.json();
-  const res = j.chart && j.chart.result && j.chart.result[0];
-  if (!res) return { symbol, error: (j.chart && j.chart.error && j.chart.error.description) || 'no data' };
-  const meta = res.meta || {};
-  const q = (res.indicators && res.indicators.quote && res.indicators.quote[0]) || {};
+  const isIntraday = !!(tf && tf !== '1d');
+  // Two fetches in parallel:
+  //  • dailyRes — daily series, for a reliable previous-day close (and daily volume when tf=Daily)
+  //  • liveRes  — intraday bars WITH pre/post-market, for the live price (and intraday volume)
+  const [dailyRes, liveRes] = await Promise.all([
+    yfChart(symbol, '1d', isIntraday ? '1mo' : cfg.range, false),
+    yfChart(symbol, isIntraday ? cfg.interval : '5m', isIntraday ? cfg.range : '1d', true)
+  ]);
+  const volRes = isIntraday ? liveRes : dailyRes;
+  if (!volRes) return { symbol, error: 'no data' };
+  const meta = volRes.meta || {};
+  const q = (volRes.indicators && volRes.indicators.quote && volRes.indicators.quote[0]) || {};
   const vols = (q.volume || []).filter(v => v != null && v > 0);
-  const closes = (q.close || []).filter(c => c != null);
-  const price = meta.regularMarketPrice || (closes.length ? closes[closes.length - 1] : 0);
-  let curVol;
-  if (tf && tf !== '1d') {
-    curVol = vols.length ? vols[vols.length - 1] : 0;      // intraday: latest bar's volume
-  } else {
-    curVol = meta.regularMarketVolume || (vols.length ? vols[vols.length - 1] : 0); // daily: today's full volume
-  }
-  const hist = vols.slice(0, -1);                          // average of prior bars (exclude the current bar)
+  const curVol = isIntraday ? (vols.length ? vols[vols.length - 1] : 0)
+                            : (meta.regularMarketVolume || (vols.length ? vols[vols.length - 1] : 0));
+  const hist = vols.slice(0, -1);
   const avgVol = hist.length ? Math.round(hist.reduce((a, b) => a + b, 0) / hist.length) : 0;
-  // Previous-day close. For the daily chart it's the close before the latest bar (reliable);
-  // for intraday charts use the prior regular-session close from meta.
-  let prevClose;
-  if (tf && tf !== '1d') {
-    prevClose = (meta.previousClose != null ? meta.previousClose : meta.chartPreviousClose) || 0;
-  } else {
-    prevClose = closes.length >= 2 ? closes[closes.length - 2] : (meta.previousClose || meta.chartPreviousClose || 0);
-  }
-  const volSeries = vols.slice(-40);                        // recent bars for a small volume sparkline
+  const volSeries = vols.slice(-40);
+  // Live price = latest close from the pre/post-inclusive intraday bars (reflects pre-market & after-hours).
+  const liveCloses = liveRes ? ((liveRes.indicators.quote[0].close || []).filter(c => c != null)) : [];
+  const price = liveCloses.length ? liveCloses[liveCloses.length - 1] : (meta.regularMarketPrice || 0);
+  const prevClose = prevDailyClose(dailyRes) || meta.previousClose || meta.chartPreviousClose || 0;
   return { symbol, price, avgVol, curVol, prevClose, volSeries, tf: tf || '1d' };
 }
 app.get('/api/quote', async (req, res) => {
