@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "tradingview": {
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "args": ["C:\\Users\\TanapatrChantrasook\\tradingview-mcp\\src\\server.js"]
+    }
+  }
+}
