@@ -10,6 +10,10 @@ backups/
 
 # Machine-specific local settings
 .claude/settings.local.json
+.mcp.json
+
+# Logs
+*.log
 
 # Zips
 *.zip
