@@ -155,7 +155,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);font-size:13px
 
 /* PERFORMANCE */
 .perf-page{padding:24px 28px}
-.stats-overview{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+.stats-overview{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:14px}
 .stat-card{background:var(--surface);border:0.5px solid var(--border2);border-radius:8px;padding:12px 16px}
 .stat-card-label{font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px}
 .stat-card-val{font-family:var(--fd);font-size:22px;font-weight:700}
@@ -297,10 +297,13 @@ input[type=file]{display:none}
       <!-- IN-TRADE STOPWATCH -->
       <div id="sw-widget" style="display:flex;align-items:center;gap:8px">
         <button id="sw-btn" onclick="swStart()" title="Start in-trade stopwatch" style="display:flex;align-items:center;justify-content:center;background:transparent;border:0.5px solid var(--border2);border-radius:6px;padding:5px 10px;color:var(--muted);font-size:16px;cursor:pointer;font-family:var(--fb);transition:all .15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'"><i class="ti ti-stopwatch"></i></button>
-        <span id="sw-time" style="display:none;font-family:var(--fd);font-size:15px;font-weight:700;color:var(--accent2);min-width:52px;text-align:center">00:00</span>
+        <span id="sw-time" style="display:none;font-family:var(--fd);font-size:15px;font-weight:700;color:var(--accent2);min-width:52px;text-align:center;padding:3px 8px;border-radius:5px;transition:background .2s,color .2s">00:00</span>
         <button id="sw-reset" onclick="swReset()" title="Reset to 00:00" style="display:none;background:transparent;border:0.5px solid var(--border2);border-radius:6px;padding:5px 12px;color:var(--muted);font-size:11px;cursor:pointer;font-family:var(--fb)">Reset</button>
         <select id="sw-setup" onchange="swSetupChange()" class="form-select" style="display:none;width:170px;font-size:12px;padding:5px 8px"><option value="">In a trade? — setup</option></select>
-        <span id="sw-avg" style="display:none;font-size:11px;font-family:var(--fd);white-space:nowrap"></span>
+        <div id="sw-meta" style="display:none;flex-direction:column;justify-content:center;line-height:1.25">
+          <span id="sw-avg" style="font-size:11px;font-family:var(--fd);white-space:nowrap"></span>
+          <span id="sw-min" style="font-size:10px;color:var(--muted);font-family:var(--fd);white-space:nowrap">Min time in trade: 5 mins</span>
+        </div>
       </div>
       <button onclick="toggleTheme()" id="theme-toggle" title="Switch theme" style="display:flex;align-items:center;gap:6px;background:transparent;border:0.5px solid var(--border2);border-radius:6px;padding:5px 12px;color:var(--muted);font-size:18px;cursor:pointer;font-family:var(--fb);transition:all .15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'"><span id="theme-label">☀️</span></button>
     </div>
@@ -1307,7 +1310,14 @@ function swAvgPotentialMins(name){
     .map(t=>durMins(t.entryTime,t.potentialExitTime)).filter(d=>d!=null);
   return arr.length ? Math.round(arr.reduce((a,b)=>a+b,0)/arr.length) : null;
 }
+const SW_MIN_SECS = 300; // minimum time in trade (5 minutes)
 function swUpdateAvg(){
+  // Timer badge: red background until the 5-min minimum, then green
+  const t=document.getElementById('sw-time');
+  if(t){
+    if(swSeconds < SW_MIN_SECS){ t.style.background='rgba(229,115,104,0.22)'; t.style.color='var(--red)'; }
+    else { t.style.background='rgba(76,175,133,0.22)'; t.style.color='var(--green)'; }
+  }
   const sel=document.getElementById('sw-setup'), avgEl=document.getElementById('sw-avg');
   if(!sel||!avgEl) return;
   const name=sel.value;
@@ -1335,7 +1345,7 @@ function swStart(){
   swRunning=true;
   const btn=document.getElementById('sw-btn');
   if(btn){ btn.style.color='var(--accent2)'; btn.style.borderColor='var(--accent)'; }
-  ['sw-time','sw-reset','sw-setup','sw-avg'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='';});
+  ['sw-time','sw-reset','sw-setup','sw-meta'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=(id==='sw-meta'?'flex':'');});
   swFillSetups();
   document.getElementById('sw-time').textContent=swFmt(swSeconds);
   swUpdateAvg();
@@ -1345,8 +1355,8 @@ function swReset(){
   clearInterval(swInterval); swRunning=false; swSeconds=0;
   const btn=document.getElementById('sw-btn');
   if(btn){ btn.style.color=''; btn.style.borderColor=''; }
-  const t=document.getElementById('sw-time'); if(t) t.textContent='00:00';
-  ['sw-time','sw-reset','sw-setup','sw-avg'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+  const t=document.getElementById('sw-time'); if(t){ t.textContent='00:00'; t.style.background=''; t.style.color='var(--accent2)'; }
+  ['sw-time','sw-reset','sw-setup','sw-meta'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
 }
 
 // Populate the trade-log setup dropdown, grouped by playbook category (Opening Drive, Continuation, etc.)
@@ -1655,11 +1665,15 @@ function renderPerformance(){
   const avgPot=total?(allT.reduce((s,t)=>s+(t.rrPot||0),0)/total).toFixed(2):'—';
   const totalPnl=allT.reduce((s,t)=>s+(t.pnl||0),0);
   const pnlStr=(totalPnl>=0?'+$':'-$')+Math.abs(totalPnl).toLocaleString();
+  // Average time in trade (Trade Journal — entry → exit, handles past-midnight)
+  const _durs=allT.map(t=>durMins(t.entryTime,t.exitTime)).filter(d=>d!=null);
+  const avgTimeStr=_durs.length?fmtMins(Math.round(_durs.reduce((a,b)=>a+b,0)/_durs.length)):'—';
   document.getElementById('stats-overview').innerHTML=`
     <div class="stat-card"><div class="stat-card-label">Total PnL</div><div class="stat-card-val ${totalPnl>=0?'s-green':'s-red'}">${total?pnlStr:'—'}</div><div class="stat-card-sub">across ${total} trades</div></div>
     <div class="stat-card"><div class="stat-card-label">Total Win Rate</div><div class="stat-card-val s-green">${total?winRate+'%':'—'}</div><div class="stat-card-sub">${wins} ${wins===1?'Win':'Wins'} / ${losses} ${losses===1?'Loss':'Losses'}</div></div>
     <div class="stat-card"><div class="stat-card-label">Avg Reward (R)</div><div class="stat-card-val s-orange">${avgRR}</div><div class="stat-card-sub">winning trades only</div></div>
     <div class="stat-card"><div class="stat-card-label">Avg Reward Potential</div><div class="stat-card-val s-orange">${avgPot}</div><div class="stat-card-sub">what was available</div></div>
+    <div class="stat-card"><div class="stat-card-label">Avg Time in Trade</div><div class="stat-card-val s-green">${avgTimeStr}</div><div class="stat-card-sub">${_durs.length} timed trade${_durs.length!==1?'s':''}</div></div>
   `;
   const gc='rgba(255,255,255,0.05)',opts={responsive:true,plugins:{legend:{display:false},tooltip:{backgroundColor:'#1a1a1e',titleColor:'#f0f0ee',bodyColor:'#888884',borderColor:'rgba(255,255,255,0.1)',borderWidth:1}}};
   const ac=themeAccent();
