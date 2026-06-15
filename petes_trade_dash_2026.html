@@ -277,11 +277,11 @@ input[type=file]{display:none}
   <div class="nav-divider"></div>
   <div class="nav-item" id="nav-playbook2" onclick="switchPage('playbook2')"><i class="ti ti-books"></i> Playbook &amp; Setups (Secondary Ideas)</div>
   <div class="nav-divider"></div>
+  <div class="nav-item" id="nav-psychology" onclick="switchPage('psychology')"><i class="ti ti-checklist"></i> Trade Management</div>
+  <div class="nav-divider"></div>
   <div class="nav-item" id="nav-perf" onclick="switchPage('perf')"><i class="ti ti-chart-line"></i> Performance &amp; Stats</div>
   <div class="nav-divider"></div>
   <div class="nav-item" id="nav-goals" onclick="switchPage('goals')"><i class="ti ti-target"></i> Goal Tracker</div>
-  <div class="nav-divider"></div>
-  <div class="nav-item" id="nav-psychology" onclick="switchPage('psychology')"><i class="ti ti-brain"></i> Psychology</div>
   <div class="nav-divider"></div>
   <div class="nav-item" id="nav-study" onclick="switchPage('study')"><i class="ti ti-school"></i> Studies &amp; Resources</div>
   <div class="nav-divider"></div>
@@ -1207,7 +1207,7 @@ const pageTitles={
   goals:'GOAL <span style="color:var(--accent)">TRACKER</span>',
   playbook:'MY PLAYBOOK &amp; SETUPS <span style="color:var(--accent)">(PERSONAL)</span>',
   playbook2:'PLAYBOOK &amp; SETUPS <span style="color:var(--accent)">(SECONDARY IDEAS)</span>',
-  psychology:'<span style="color:var(--accent)">PSYCHOLOGY</span>',
+  psychology:'TRADE <span style="color:var(--accent)">MANAGEMENT</span>',
   screener:'STOCK <span style="color:var(--accent)">SCREENER</span>',
 };
 let currentTheme='orange';
@@ -1318,7 +1318,18 @@ function swUpdateAvg(){
   avgEl.innerHTML='avg potential ~'+fmtMins(avg)+(reached?' <span style="color:var(--green)">✓ reached</span>':'');
   avgEl.style.color=reached?'var(--green)':'var(--accent2)';
 }
-function swSetupChange(){ swUpdateAvg(); }
+function swSetupChange(){
+  swUpdateAvg();
+  // Picking a setup while the in-trade stopwatch is running jumps straight to the
+  // Trade Management page with that setup loaded — so you can manage the trade instantly.
+  const name = (document.getElementById('sw-setup')||{}).value;
+  if(!name) return;
+  const p = (typeof allPlays==='function') ? allPlays().find(x=>x.name===name) : null;
+  if(!p) return;
+  switchPage('psychology');                 // builds the Trade Management setup dropdown
+  const sel = document.getElementById('tm-setup');
+  if(sel){ sel.value = String(p.id); renderTradeMgmt(); }
+}
 function swStart(){
   if(swRunning) return; // already running — Reset is the only control
   swRunning=true;
