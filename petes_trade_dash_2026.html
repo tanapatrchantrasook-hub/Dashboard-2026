@@ -273,13 +273,13 @@ input[type=file]{display:none}
   <div class="nav-divider"></div>
   <div class="nav-item active" id="nav-tradelog" onclick="switchPage('tradelog')"><i class="ti ti-list-details"></i> Daily Report Card &amp; Trade Journal</div>
   <div class="nav-divider"></div>
-  <div class="nav-item" id="nav-playbook" onclick="switchPage('playbook')"><i class="ti ti-book"></i> My Playbook &amp; Setups (Personal)</div>
-  <div class="nav-divider"></div>
-  <div class="nav-item" id="nav-playbook2" onclick="switchPage('playbook2')"><i class="ti ti-books"></i> Playbook &amp; Setups (Secondary Ideas)</div>
-  <div class="nav-divider"></div>
   <div class="nav-item" id="nav-psychology" onclick="switchPage('psychology')"><i class="ti ti-checklist"></i> Trade Management</div>
   <div class="nav-divider"></div>
   <div class="nav-item" id="nav-perf" onclick="switchPage('perf')"><i class="ti ti-chart-line"></i> Performance &amp; Stats</div>
+  <div class="nav-divider"></div>
+  <div class="nav-item" id="nav-playbook" onclick="switchPage('playbook')"><i class="ti ti-book"></i> My Playbook &amp; Setups (Personal)</div>
+  <div class="nav-divider"></div>
+  <div class="nav-item" id="nav-playbook2" onclick="switchPage('playbook2')"><i class="ti ti-books"></i> Playbook &amp; Setups (Secondary Ideas)</div>
   <div class="nav-divider"></div>
   <div class="nav-item" id="nav-goals" onclick="switchPage('goals')"><i class="ti ti-target"></i> Goal Tracker</div>
   <div class="nav-divider"></div>
@@ -904,9 +904,22 @@ input[type=file]{display:none}
 
       <!-- NOTES & REMINDERS -->
       <div class="subtab-content" id="subtab-psych-notes">
+        <style>
+          #pq-list .pq-card{background:var(--surface);border:0.5px solid var(--border2);border-left:2px solid var(--accent);border-radius:0 8px 8px 0;padding:11px 14px;margin-bottom:8px;cursor:pointer;transition:border-color .15s,background .15s}
+          #pq-list .pq-card:hover{border-left-color:var(--accent2);background:var(--surface2,var(--surface))}
+        </style>
         <div class="section-block">
           <div class="section-label">My trading psychology notes</div>
-          <textarea class="desc-textarea" id="psych-notes-box" placeholder="Your patterns, triggers, and reminders. e.g. 'I exit early when a trade goes green fast — that fear of giving back profit is the #1 leak. The plan is the plan. Trust the measured move target.'" style="min-height:160px" oninput="savePsychNotes()"></textarea>
+          <textarea class="desc-textarea" id="psych-notes-box" placeholder="Your patterns, triggers, and reminders. e.g. 'I exit early when a trade goes green fast — that fear of giving back profit is the #1 leak. The plan is the plan. Trust the measured move target.'" style="min-height:120px" oninput="savePsychNotes()"></textarea>
+        </div>
+        <div class="section-block">
+          <div class="section-label" id="pq-section-label">Quotes &amp; reminders log</div>
+          <textarea class="desc-textarea" id="pq-input" placeholder="Log a quote or reminder — e.g. 'Let winners run. The plan is the plan.'" style="min-height:70px"></textarea>
+          <div style="display:flex;gap:8px;margin-top:8px;margin-bottom:14px">
+            <button class="modal-save-btn" id="pq-save-btn" style="width:auto;padding:7px 16px;margin-top:0;font-size:12px" onclick="pqSave()"><i class="ti ti-plus"></i> Log it</button>
+            <button class="wl-btn" id="pq-cancel-btn" style="display:none;padding:7px 16px;font-size:12px" onclick="pqCancelEdit()">Cancel</button>
+          </div>
+          <div id="pq-list"></div>
         </div>
       </div>
     </div>
@@ -3097,12 +3110,106 @@ function tmTally(){
   }
 }
 
-function savePsychNotes(){ /* held in memory this session; persists in Phase 2 */ }
+let psychNotes = '';
+function savePsychNotes(){
+  const box = document.getElementById('psych-notes-box');
+  if(box) psychNotes = box.value;
+  scheduleSave();
+}
+
+// ── QUOTES & REMINDERS LOG ──────────────────────────────────────
+let psychLogs = [];          // [{id, quote, date}]  date = ms epoch when logged
+let nextPsychLogId = 1;
+let pqEditId = null;         // id currently being edited (null = adding new)
+let pqOpenId = null;         // id currently expanded open
+
+function _pqFmtDate(ts){
+  const d = new Date(ts);
+  if(isNaN(d)) return '';
+  return d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});
+}
+function renderPsychLog(){
+  const wrap = document.getElementById('pq-list'); if(!wrap) return;
+  if(!psychLogs.length){
+    wrap.innerHTML = '<div class="empty-log" style="padding:24px 16px">No quotes logged yet — write one above and hit "Log it".</div>';
+    return;
+  }
+  const items = [...psychLogs].sort((a,b)=>(b.date||0)-(a.date||0));
+  wrap.innerHTML = items.map(q=>{
+    const open = pqOpenId===q.id;
+    const full = (q.quote||'').trim();
+    const oneLine = full.replace(/\s+/g,' ');
+    const short = oneLine.length>90 ? oneLine.slice(0,90)+'…' : oneLine;
+    return `<div class="pq-card" onclick="pqToggle(${q.id})">
+      <div style="display:flex;gap:12px;align-items:baseline">
+        <span style="font-size:11px;color:var(--muted);font-family:var(--fd);white-space:nowrap;min-width:104px">${_pqFmtDate(q.date)}</span>
+        <span style="font-size:13px;color:var(--text);line-height:1.55;flex:1;white-space:${open?'pre-wrap':'nowrap'};overflow:${open?'visible':'hidden'};text-overflow:ellipsis">${_escHtml(open?full:short)}</span>
+        <i class="ti ti-chevron-${open?'up':'down'}" style="color:var(--muted);font-size:14px"></i>
+      </div>
+      ${open ? `<div style="display:flex;gap:8px;margin-top:11px" onclick="event.stopPropagation()">
+        <button class="wl-btn" style="padding:5px 14px;font-size:11px" onclick="pqEdit(${q.id})"><i class="ti ti-pencil"></i> Edit</button>
+        <button class="wl-btn" style="padding:5px 14px;font-size:11px;color:var(--red)" onclick="pqDelete(${q.id})"><i class="ti ti-trash"></i> Delete</button>
+      </div>` : ''}
+    </div>`;
+  }).join('');
+}
+function pqSave(){
+  const box = document.getElementById('pq-input');
+  const text = (box ? box.value : '').trim();
+  if(!text){ if(box) box.focus(); return; }
+  if(pqEditId!=null){
+    const q = psychLogs.find(x=>x.id===pqEditId);
+    if(q) q.quote = text;   // keep original log date
+    pqEditId = null;
+  } else {
+    const q = { id: nextPsychLogId++, quote: text, date: Date.now() };
+    psychLogs.push(q);
+    pqOpenId = q.id;
+  }
+  if(box) box.value='';
+  pqUpdateButtons();
+  renderPsychLog();
+  scheduleSave();
+}
+function pqEdit(id){
+  const q = psychLogs.find(x=>x.id===id); if(!q) return;
+  pqEditId = id;
+  const box = document.getElementById('pq-input');
+  if(box){ box.value = q.quote||''; box.focus(); }
+  pqUpdateButtons();
+}
+function pqCancelEdit(){
+  pqEditId = null;
+  const box = document.getElementById('pq-input'); if(box) box.value='';
+  pqUpdateButtons();
+}
+function pqUpdateButtons(){
+  const editing = pqEditId!=null;
+  const saveBtn = document.getElementById('pq-save-btn');
+  const cancel = document.getElementById('pq-cancel-btn');
+  const label = document.getElementById('pq-section-label');
+  if(saveBtn) saveBtn.innerHTML = editing ? '<i class="ti ti-device-floppy"></i> Save changes' : '<i class="ti ti-plus"></i> Log it';
+  if(cancel) cancel.style.display = editing ? '' : 'none';
+  if(label) label.textContent = editing ? 'Editing quote' : 'Quotes & reminders log';
+}
+function pqDelete(id){
+  if(!confirm('Delete this quote?')) return;
+  psychLogs = psychLogs.filter(x=>x.id!==id);
+  if(pqOpenId===id) pqOpenId=null;
+  if(pqEditId===id) pqCancelEdit();
+  renderPsychLog();
+  scheduleSave();
+}
+function pqToggle(id){
+  pqOpenId = (pqOpenId===id) ? null : id;
+  renderPsychLog();
+}
 
 renderPlaybook();
 renderPlaybook2();
 renderPerformance();
 initTradeMgmtDropdown();
+renderPsychLog();
 
 </script>
 <!-- NEWS MODAL -->
@@ -5833,6 +5940,9 @@ function collectData() {
     tmCommitStore: tmCommitStore,
     tmSetupSpecific: tmSetupSpecific,
     studyList: studyList,
+    psychNotes: psychNotes,
+    psychLogs: psychLogs,
+    nextPsychLogId: nextPsychLogId,
     reportCards: reportCards,
     dailyRules: dailyRules,
     tradingSettings: tradingSettings,
@@ -5931,6 +6041,22 @@ async function loadSavedData() {
     if (d.studyList && d.studyList.length) {
       studyList.push(...d.studyList);
       renderStudy();
+    }
+    // Restore trading psychology notes
+    if (typeof d.psychNotes === 'string') {
+      psychNotes = d.psychNotes;
+      const _pn = document.getElementById('psych-notes-box');
+      if (_pn) _pn.value = psychNotes;
+    }
+    // Restore quotes & reminders log
+    if (Array.isArray(d.psychLogs)) {
+      psychLogs = d.psychLogs;
+      if (typeof d.nextPsychLogId === 'number') {
+        nextPsychLogId = d.nextPsychLogId;
+      } else if (psychLogs.length) {
+        nextPsychLogId = Math.max(...psychLogs.map(q => q.id || 0)) + 1;
+      }
+      renderPsychLog();
     }
     // Restore report cards
     if (d.reportCards) {
