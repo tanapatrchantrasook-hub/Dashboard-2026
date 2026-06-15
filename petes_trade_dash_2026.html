@@ -303,6 +303,7 @@ input[type=file]{display:none}
         <div id="sw-meta" style="display:none;flex-direction:column;justify-content:center;line-height:1.25">
           <span id="sw-avg" style="font-size:11px;font-family:var(--fd);white-space:nowrap"></span>
           <span id="sw-min" style="font-size:10px;color:var(--muted);font-family:var(--fd);white-space:nowrap">Min time in trade: 5 mins</span>
+          <span id="sw-status" style="font-size:10px;font-weight:700;font-family:var(--fd);white-space:nowrap"></span>
         </div>
       </div>
       <button onclick="toggleTheme()" id="theme-toggle" title="Switch theme" style="display:flex;align-items:center;gap:6px;background:transparent;border:0.5px solid var(--border2);border-radius:6px;padding:5px 12px;color:var(--muted);font-size:18px;cursor:pointer;font-family:var(--fb);transition:all .15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'"><span id="theme-label">☀️</span></button>
@@ -1327,9 +1328,21 @@ const SW_MIN_SECS = 300; // minimum time in trade (5 minutes)
 function swUpdateAvg(){
   // Timer badge: red background until the 5-min minimum, then green
   const t=document.getElementById('sw-time');
+  const st=document.getElementById('sw-status');
+  const under = swSeconds < SW_MIN_SECS;
   if(t){
-    if(swSeconds < SW_MIN_SECS){ t.style.background='rgba(229,115,104,0.22)'; t.style.color='var(--red)'; }
+    if(under){ t.style.background='rgba(229,115,104,0.22)'; t.style.color='var(--red)'; }
     else { t.style.background='rgba(76,175,133,0.22)'; t.style.color='var(--green)'; }
+  }
+  if(st){
+    if(under){
+      const left=Math.ceil((SW_MIN_SECS-swSeconds)/60);
+      st.textContent='✋ Min time not passed — don’t close yet ('+left+' min left)';
+      st.style.color='var(--red)';
+    } else {
+      st.textContent='✓ Min time passed — manage your exit';
+      st.style.color='var(--green)';
+    }
   }
   const sel=document.getElementById('sw-setup'), avgEl=document.getElementById('sw-avg');
   if(!sel||!avgEl) return;
