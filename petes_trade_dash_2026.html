@@ -42,6 +42,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);font-size:13px
 .page-title{font-family:var(--fd);font-size:18px;font-weight:700;letter-spacing:0.06em}
 .page-title span{color:var(--accent)}
 .topbar-right{display:flex;gap:10px;align-items:center}
+.watch-strip{padding:8px 28px;border-bottom:0.5px solid var(--border);background:var(--surface);display:flex;align-items:center}
+.watch-strip:empty{display:none}
 .topbar-tag{font-size:11px;color:var(--muted);border:0.5px solid var(--border2);padding:4px 10px;border-radius:4px;cursor:pointer}
 .topbar-tag.active{color:var(--accent2);border-color:var(--accent);background:rgba(224,92,42,0.08)}
 
@@ -293,7 +295,6 @@ input[type=file]{display:none}
   <div class="topbar">
     <div class="page-title" id="topbar-title">DAILY REPORT CARD &amp; <span>TRADE JOURNAL</span></div>
     <div style="display:flex;align-items:center;gap:10px">
-      <div class="topbar-right" id="topbar-right"></div>
       <!-- IN-TRADE STOPWATCH -->
       <div id="sw-widget" style="display:flex;align-items:center;gap:8px">
         <button id="sw-btn" onclick="swStart()" title="Start in-trade stopwatch" style="display:flex;align-items:center;justify-content:center;background:transparent;border:0.5px solid var(--border2);border-radius:6px;padding:5px 10px;color:var(--muted);font-size:16px;cursor:pointer;font-family:var(--fb);transition:all .15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'"><i class="ti ti-stopwatch"></i></button>
@@ -309,6 +310,7 @@ input[type=file]{display:none}
       <button onclick="toggleTheme()" id="theme-toggle" title="Switch theme" style="display:flex;align-items:center;gap:6px;background:transparent;border:0.5px solid var(--border2);border-radius:6px;padding:5px 12px;color:var(--muted);font-size:18px;cursor:pointer;font-family:var(--fb);transition:all .15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'"><span id="theme-label">☀️</span></button>
     </div>
   </div>
+  <div id="watch-strip" class="watch-strip"></div>
 
   <!-- TRADE LOG & JOURNAL -->
   <div class="page active" id="page-tradelog">
@@ -485,7 +487,6 @@ input[type=file]{display:none}
       <div class="chart-card" id="missed-trades-card" style="margin-top:14px">
         <div class="chart-title">Missed Trades — Reasons <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Trades of the Day)</span></div>
         <div id="missed-breakdown" style="margin-top:6px"></div>
-        <div id="missed-trades-content" style="margin-top:14px"></div>
       </div>
       <div class="chart-card" id="goals-achieved-card" style="margin-top:14px">
         <div class="chart-title">Goals Achieved</div>
@@ -1320,7 +1321,8 @@ function swFillSetups(){
   if(prev) sel.value=prev;
 }
 function swAvgPotentialMins(name){
-  const arr=trades.filter(t=>setupMatch(t,name) && t.entryTime && t.potentialExitTime)
+  const all=[...trades, ...(typeof todTrades!=='undefined'?todTrades:[])];
+  const arr=all.filter(t=>setupMatch(t,name) && t.entryTime && t.potentialExitTime)
     .map(t=>durMins(t.entryTime,t.potentialExitTime)).filter(d=>d!=null);
   return arr.length ? Math.round(arr.reduce((a,b)=>a+b,0)/arr.length) : null;
 }
@@ -2314,14 +2316,14 @@ function dailyWatchTopbar(){
   }).join('');
   const empty=list.length?'':`<span style="font-size:11px;color:var(--muted);font-style:italic">none yet</span>`;
   const addBtn=`<button onclick="openWatchModal('daily')" title="Add a daily watchlist symbol" style="flex-shrink:0;background:transparent;border:0.5px dashed var(--border2);color:var(--muted);border-radius:4px;padding:2px 9px;font-size:14px;line-height:1;cursor:pointer;font-family:var(--fb)" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent2)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'">+</button>`;
-  return `<div style="display:flex;gap:6px;align-items:center;overflow-x:auto;max-width:46vw" title="Daily Watchlist">
-    <span style="font-size:10px;color:var(--muted);letter-spacing:0.08em;font-family:var(--fd);flex-shrink:0"><i class="ti ti-eye"></i> WATCH</span>
+  return `<div style="display:flex;gap:6px;align-items:center;overflow-x:auto;width:100%" title="Daily Watchlist">
+    <span style="font-size:10px;color:var(--muted);letter-spacing:0.08em;font-family:var(--fd);flex-shrink:0"><i class="ti ti-eye"></i> WATCHLIST</span>
     ${chips}${empty}${addBtn}
   </div>`;
 }
-// Re-render the top-bar watchlist (call whenever the daily watchlist changes)
+// Re-render the watchlist strip under the page title (call whenever the daily watchlist changes)
 function refreshWatchTopbar(){
-  const el=document.getElementById('topbar-right');
+  const el=document.getElementById('watch-strip');
   if(el) el.innerHTML=dailyWatchTopbar();
 }
 function playMatchesFilter(p){
@@ -3008,7 +3010,8 @@ function renderTradeMgmt(){
     <div class="cl-item"><div class="cl-label">${r}</div><div class="cl-btns"><button class="cl-btn" id="tmr-${i}-y" onclick="tmSetYN('reminders',${i},'Y')">✓</button><button class="cl-btn" id="tmr-${i}-n" onclick="tmSetYN('reminders',${i},'N')">✗</button></div></div>`).join('');
   // Build the question list, adding a per-setup "average trade duration" question if we have data
   tmActiveQuestions = tmCoreQuestions.slice();
-  const setupDurs = trades
+  const tmAllTrades = [...trades, ...(typeof todTrades!=='undefined'?todTrades:[])];
+  const setupDurs = tmAllTrades
     .filter(t => setupMatch(t, p.name) && t.entryTime && t.exitTime)
     .map(t => durMins(t.entryTime, t.exitTime))
     .filter(d => d != null);
@@ -3020,7 +3023,7 @@ function renderTradeMgmt(){
     });
   }
   // Average POTENTIAL trade duration (entry → potential exit) — "have you let it run to its potential length?"
-  const setupPDurs = trades
+  const setupPDurs = tmAllTrades
     .filter(t => setupMatch(t, p.name) && t.entryTime && t.potentialExitTime)
     .map(t => durMins(t.entryTime, t.potentialExitTime))
     .filter(d => d != null);
@@ -3862,9 +3865,8 @@ function renderSetupPerformance() {
 }
 
 function renderMissedTradesPerf() {
-  const content = document.getElementById('missed-trades-content');
   const bd = document.getElementById('missed-breakdown');
-  if (!content) return;
+  if (!bd) return;
   const missed = (typeof todTrades!=='undefined'?todTrades:[]).filter(t => t.missedTrade);
 
   // Reason frequency across all missed trades (includes every reason in the shared list + any custom)
@@ -3876,34 +3878,20 @@ function renderMissedTradesPerf() {
   const totalReasons = data.reduce((a,b)=>a+b,0);
 
   if (!missed.length) {
-    if (bd) bd.innerHTML = '';
-    content.innerHTML = '<div style="text-align:center;padding:24px;color:rgba(255,255,255,0.18);font-size:13px">No missed trades logged yet.</div>';
+    bd.innerHTML = '<div style="text-align:center;padding:24px;color:rgba(255,255,255,0.18);font-size:13px">No missed trades logged yet.</div>';
     return;
   }
 
   // Ranked breakdown (the bars here are the chart)
-  if (bd) {
-    const ranked = labels.map((l,i)=>({name:l,count:data[i]})).sort((a,b)=>b.count-a.count);
-    const maxC = Math.max(1, ...data);
-    bd.innerHTML = `<div style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin:2px 0 12px">${totalReasons} total logged · ${missed.length} missed trade${missed.length!==1?'s':''}</div>` +
-      ranked.map(r=>`
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:7px">
-          <div style="flex:1;font-size:12px;color:${r.count>0?'var(--text)':'rgba(255,255,255,0.3)'}">${r.name}</div>
-          <div style="width:120px;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden"><div style="width:${Math.round(r.count/maxC*100)}%;height:100%;background:${r.count>0?'var(--red)':'transparent'}"></div></div>
-          <div style="font-family:var(--fd);font-size:12px;font-weight:700;color:${r.count>0?'var(--red)':'rgba(255,255,255,0.3)'};min-width:60px;text-align:right">${r.count}× ${totalReasons?'· '+Math.round(r.count/totalReasons*100)+'%':''}</div>
-        </div>`).join('');
-  }
-
-  // Detail table
-  content.innerHTML = `
-    <table class="log-table" style="margin-top:4px">
-      <thead><tr><th>Date</th><th>Ticker</th><th>Missed Trade Reason(s)</th></tr></thead>
-      <tbody>${missed.map(t => `<tr>
-        <td>${fmtDMY(t.date)}</td>
-        <td class="td-ticker" style="color:var(--red)">${t.ticker}</td>
-        <td style="font-size:12px;color:var(--accent2)">${(t.missedReasons&&t.missedReasons.length)?t.missedReasons.join(', '):'—'}</td>
-      </tr>`).join('')}</tbody>
-    </table>`;
+  const ranked = labels.map((l,i)=>({name:l,count:data[i]})).sort((a,b)=>b.count-a.count);
+  const maxC = Math.max(1, ...data);
+  bd.innerHTML = `<div style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin:2px 0 12px">${totalReasons} total logged · ${missed.length} missed trade${missed.length!==1?'s':''}</div>` +
+    ranked.map(r=>`
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:7px">
+        <div style="flex:1;font-size:12px;color:${r.count>0?'var(--text)':'rgba(255,255,255,0.3)'}">${r.name}</div>
+        <div style="width:120px;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden"><div style="width:${Math.round(r.count/maxC*100)}%;height:100%;background:${r.count>0?'var(--red)':'transparent'}"></div></div>
+        <div style="font-family:var(--fd);font-size:12px;font-weight:700;color:${r.count>0?'var(--red)':'rgba(255,255,255,0.3)'};min-width:60px;text-align:right">${r.count}× ${totalReasons?'· '+Math.round(r.count/totalReasons*100)+'%':''}</div>
+      </div>`).join('');
 }
 
 function openTodModal() {
@@ -4225,6 +4213,7 @@ function renderWatchlist(mode){
 const screenerSymbols = []; // array of ticker strings
 let screenerTF = '1d';      // '1d' | '60m' | '30m' | '5m'
 const screenerHidden = {};  // { colKey: true } when a column is hidden
+let screenerSort = { key:null, dir:'desc' }; // active sort column + direction
 let _lastQuotes = {};       // cache so toggling columns doesn't refetch
 const SCREENER_COLS = [
   { key:'symbol', label:'Symbol' },
@@ -4261,6 +4250,27 @@ function removeScreenerSymbol(sym){
 }
 function setScreenerTF(tf){ screenerTF = tf; renderScreenerControls(); loadScreener(true); scheduleSave(); }
 function toggleScreenerCol(key){ screenerHidden[key] = !screenerHidden[key]; renderScreenerControls(); renderScreener(_lastQuotes); scheduleSave(); }
+// Sortable columns: click a header to sort, click again to flip direction.
+function setScreenerSort(key){
+  if(key==='volchart') return; // sparkline column isn't sortable
+  if(screenerSort.key===key){ screenerSort.dir = (screenerSort.dir==='desc'?'asc':'desc'); }
+  else { screenerSort.key = key; screenerSort.dir = (key==='symbol' ? 'asc' : 'desc'); }
+  renderScreener(_lastQuotes);
+  scheduleSave();
+}
+function _screenerSortVal(key, v){
+  if(!v) return null;
+  switch(key){
+    case 'symbol': return v.sym;
+    case 'chg':    return v.prevClose ? ((v.price-v.prevClose)/v.prevClose)*100 : null;
+    case 'avgvol': return v.avgVol;
+    case 'avgdol': return v.avgVol*v.price;
+    case 'curvol': return v.curVol;
+    case 'curdol': return v.curVol*v.price;
+    case 'rvol':   return v.rvol;
+    default:       return null; // volchart not sortable
+  }
+}
 function renderScreenerControls(){
   const tfEl=document.getElementById('screener-tf');
   if(tfEl) tfEl.innerHTML = Object.keys(TF_LABEL).map(k=>`<button onclick="setScreenerTF('${k}')" class="topbar-tag${screenerTF===k?' active':''}" style="cursor:pointer">${TF_LABEL[k]}</button>`).join('');
@@ -4301,14 +4311,40 @@ function renderScreener(quotes){
   if(!screenerSymbols.length){ tbl.style.display='none'; msg.style.display='block'; tb.innerHTML=''; thead.innerHTML=''; return; }
   tbl.style.display='table'; msg.style.display='none';
   const cols = SCREENER_COLS.filter(c=>!screenerHidden[c.key]);
-  thead.innerHTML = '<tr>'+cols.map(c=>`<th>${c.label}</th>`).join('')+'<th></th></tr>';
+  thead.innerHTML = '<tr>'+cols.map(c=>{
+    const sortable = c.key!=='volchart';
+    const active = screenerSort.key===c.key;
+    const arrow = active ? (screenerSort.dir==='asc'?' ▲':' ▼') : (sortable?' <span style="opacity:.25">⇅</span>':'');
+    const style = sortable ? 'cursor:pointer;user-select:none'+(active?';color:var(--accent2)':'') : '';
+    const handler = sortable ? ` onclick="setScreenerSort('${c.key}')" title="Sort by ${c.label}"` : '';
+    return `<th${handler} style="${style}">${c.label}${arrow}</th>`;
+  }).join('')+'<th></th></tr>';
   const rm = sym=>`<td><button onclick="removeScreenerSymbol('${sym}')" title="Remove" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:13px;cursor:pointer">✕</button></td>`;
-  tb.innerHTML = screenerSymbols.map(sym=>{
+  // Build a row record per symbol, then sort if a column is active.
+  let rows = screenerSymbols.map(sym=>{
     const q = quotes && quotes[sym];
+    let v = null;
+    if(q && !q.error){
+      const avgVol=q.avgVol||0, curVol=q.curVol||0, price=q.price||0;
+      v={ sym, avgVol, curVol, price, prevClose:q.prevClose||0, volSeries:q.volSeries||[], rvol: avgVol?curVol/avgVol:0, up: curVol>avgVol };
+    }
+    return { sym, q, v };
+  });
+  if(screenerSort.key){
+    const k=screenerSort.key, dir=(screenerSort.dir==='asc'?1:-1);
+    rows.sort((a,b)=>{
+      const av=_screenerSortVal(k,a.v), bv=_screenerSortVal(k,b.v);
+      const aNull=(av==null), bNull=(bv==null);
+      if(aNull && bNull) return 0;
+      if(aNull) return 1;   // rows without data always sink to the bottom
+      if(bNull) return -1;
+      if(typeof av==='string') return dir * av.localeCompare(bv);
+      return dir * (av - bv);
+    });
+  }
+  tb.innerHTML = rows.map(({sym,q,v})=>{
     if(!q) return `<tr><td colspan="${cols.length}" style="font-size:12px;color:var(--muted)"><span class="td-ticker">${sym}</span> · loading…</td>${rm(sym)}</tr>`;
     if(q.error) return `<tr><td colspan="${cols.length}" style="font-size:12px"><span class="td-ticker">${sym}</span> · <span style="color:var(--red)">${q.error}</span></td>${rm(sym)}</tr>`;
-    const avgVol=q.avgVol||0, curVol=q.curVol||0, price=q.price||0;
-    const v={ sym, avgVol, curVol, price, prevClose:q.prevClose||0, volSeries:q.volSeries||[], rvol: avgVol?curVol/avgVol:0, up: curVol>avgVol };
     return '<tr>'+cols.map(c=>_screenerCell(c.key,v)).join('')+rm(sym)+'</tr>';
   }).join('');
 }
@@ -5966,6 +6002,7 @@ function collectData() {
     screenerSymbols: screenerSymbols,
     screenerTF: screenerTF,
     screenerHidden: screenerHidden,
+    screenerSort: screenerSort,
     rcRoutineRows: RC_ROUTINE_ROWS,
     rcMgmtRows: RC_MGMT_ROWS,
     todTrades: todTrades,
@@ -6113,6 +6150,7 @@ async function loadSavedData() {
     if (Array.isArray(d.screenerSymbols) && d.screenerSymbols.length) { screenerSymbols.push(...d.screenerSymbols); }
     if (d.screenerTF) screenerTF = d.screenerTF;
     if (d.screenerHidden && typeof d.screenerHidden === 'object') Object.assign(screenerHidden, d.screenerHidden);
+    if (d.screenerSort && typeof d.screenerSort === 'object') Object.assign(screenerSort, d.screenerSort);
     // Restore Trades of the Day
     if (d.todTrades && d.todTrades.length) {
       todTrades.push(...d.todTrades);
