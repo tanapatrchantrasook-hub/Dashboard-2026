@@ -533,6 +533,13 @@ input[type=file]{display:none}
           <span style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;font-family:var(--fd)">Timeframe</span>
           <div id="screener-tf" style="display:flex;gap:4px"></div>
         </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;font-family:var(--fd)">Date</span>
+          <button class="topbar-tag" onclick="stepScreenerDate(-1)" style="cursor:pointer" title="Previous trading day">◀</button>
+          <input type="date" id="screener-date" onchange="onScreenerDateChange()" style="background:var(--surface);border:0.5px solid var(--border2);color:var(--text);border-radius:4px;padding:4px 8px;font-size:12px;font-family:var(--fd)">
+          <button class="topbar-tag" onclick="stepScreenerDate(1)" style="cursor:pointer" title="Next trading day">▶</button>
+          <button class="topbar-tag" id="scr-live" onclick="screenerGoLive()" style="cursor:pointer" title="Back to live data">Live</button>
+        </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;font-family:var(--fd)">Show columns</span>
           <div id="screener-cols" style="display:flex;gap:4px;flex-wrap:wrap"></div>
@@ -4214,17 +4221,23 @@ const screenerSymbols = []; // array of ticker strings
 let screenerTF = '1d';      // '1d' | '60m' | '30m' | '5m'
 const screenerHidden = {};  // { colKey: true } when a column is hidden
 let screenerSort = { key:null, dir:'desc' }; // active sort column + direction
+let screenerDate = '';      // '' = live; otherwise 'YYYY-MM-DD' historical close-of-day
+const screenerHighlights = {}; // { SYMBOL: 'green'|'orange'|'yellow' } per-symbol chip backdrop
 let _lastQuotes = {};       // cache so toggling columns doesn't refetch
+const _volDollarDir = {};   // { SYMBOL: 1|-1|0 } vs previous load — colors Vol Traded ($)
+const _rvolDir = {};        // { SYMBOL: 1|-1|0 } vs previous load — colors RVOL
 const SCREENER_COLS = [
-  { key:'symbol', label:'Symbol' },
-  { key:'chg',    label:'% Chg' },
-  { key:'avgvol', label:'Avg Volume' },
-  { key:'avgdol', label:'Avg Vol × Price' },
-  { key:'curvol', label:'Current Volume' },
-  { key:'curdol', label:'Current Vol × Price' },
-  { key:'rvol',   label:'RVOL' },
-  { key:'volchart', label:'Volume' },
+  { key:'symbol',    label:'Symbol' },
+  { key:'mktcap',    label:'Market Cap' },
+  { key:'voldollar', label:'Vol Traded ($)' },
+  { key:'avgdollar', label:'Avg D Vol 20D ($)' },
+  { key:'price',     label:'Current Price' },
+  { key:'rvol',      label:'RVOL' },
+  { key:'volchart',  label:'Volume' },
 ];
+const SCREENER_SORTABLE = new Set(['symbol','mktcap','voldollar','avgdollar','price','rvol']);
+function _fmtDollarFull(n){ return (n==null||isNaN(n)) ? '—' : '$'+Math.round(n).toLocaleString('en-US'); }
+function _fmtPrice(p){ return (p==null||isNaN(p)) ? '—' : '$'+(p<1 ? Number(p).toFixed(4) : Number(p).toFixed(2)); }
 const TF_LABEL = { '1d':'Daily', '60m':'1h', '30m':'30m', '5m':'5m' };
 function _fmtBig(n){
   n = Number(n)||0;
@@ -4248,7 +4261,53 @@ function removeScreenerSymbol(sym){
   renderScreener(_lastQuotes);
   scheduleSave();
 }
-function setScreenerTF(tf){ screenerTF = tf; renderScreenerControls(); loadScreener(true); scheduleSave(); }
+function setScreenerTF(tf){ if(screenerDate) return; screenerTF = tf; renderScreenerControls(); loadScreener(true); scheduleSave(); }
+// Symbol highlight chip: cycle none → green → orange → yellow → none (persisted per symbol).
+function cycleScreenerHL(sym){
+  const order=[null,'green','orange','yellow'];
+  const next=order[(order.indexOf(screenerHighlights[sym]||null)+1)%order.length];
+  if(next) screenerHighlights[sym]=next; else delete screenerHighlights[sym];
+  renderScreener(_lastQuotes); scheduleSave();
+}
+function _scrHLbg(sym){
+  const h=screenerHighlights[sym];
+  return h==='green'?'rgba(63,185,80,0.32)':h==='orange'?'rgba(224,92,42,0.32)':h==='yellow'?'rgba(240,200,60,0.40)':'transparent';
+}
+// ── Date navigation (historical close-of-day snapshots) ──
+function _scrToday(){ return new Date().toISOString().slice(0,10); }
+function _scrIsWeekend(d){ const day=d.getUTCDay(); return day===0||day===6; }
+function _scrPrevTradingDay(dateStr){
+  const d=new Date((dateStr||_scrToday())+'T00:00:00Z');
+  do { d.setUTCDate(d.getUTCDate()-1); } while(_scrIsWeekend(d));
+  return d.toISOString().slice(0,10);
+}
+function _scrNextTradingDay(dateStr){
+  const d=new Date(dateStr+'T00:00:00Z');
+  do { d.setUTCDate(d.getUTCDate()+1); } while(_scrIsWeekend(d));
+  return d.toISOString().slice(0,10);
+}
+function stepScreenerDate(dir){
+  if(dir<0){
+    screenerDate=_scrPrevTradingDay(screenerDate||_scrToday());
+  } else {
+    if(!screenerDate) return;                 // already live
+    const nxt=_scrNextTradingDay(screenerDate);
+    if(nxt>=_scrToday()){ screenerGoLive(); return; }  // stepping into today → Live
+    screenerDate=nxt;
+  }
+  renderScreenerControls(); loadScreener(true); scheduleSave();
+}
+function onScreenerDateChange(){
+  const el=document.getElementById('screener-date');
+  const v=el?el.value:'';
+  if(v && v>=_scrToday()){ screenerGoLive(); return; } // today/future → Live
+  screenerDate=v||'';
+  renderScreenerControls(); loadScreener(true); scheduleSave();
+}
+function screenerGoLive(){
+  screenerDate='';
+  renderScreenerControls(); loadScreener(true); scheduleSave();
+}
 function toggleScreenerCol(key){ screenerHidden[key] = !screenerHidden[key]; renderScreenerControls(); renderScreener(_lastQuotes); scheduleSave(); }
 // Sortable columns: click a header to sort, click again to flip direction.
 function setScreenerSort(key){
@@ -4261,21 +4320,25 @@ function setScreenerSort(key){
 function _screenerSortVal(key, v){
   if(!v) return null;
   switch(key){
-    case 'symbol': return v.sym;
-    case 'chg':    return v.prevClose ? ((v.price-v.prevClose)/v.prevClose)*100 : null;
-    case 'avgvol': return v.avgVol;
-    case 'avgdol': return v.avgVol*v.price;
-    case 'curvol': return v.curVol;
-    case 'curdol': return v.curVol*v.price;
-    case 'rvol':   return v.rvol;
-    default:       return null; // volchart not sortable
+    case 'symbol':    return v.sym;
+    case 'mktcap':    return v.marketCap;        // null for ETFs → sinks to bottom
+    case 'voldollar': return v.curVol * v.price;
+    case 'avgdollar': return v.avgDollar20d;     // may be null
+    case 'price':     return v.price;
+    case 'rvol':      return v.rvol;
+    default:          return null;               // volchart not sortable
   }
 }
 function renderScreenerControls(){
+  const hist = !!screenerDate;
   const tfEl=document.getElementById('screener-tf');
-  if(tfEl) tfEl.innerHTML = Object.keys(TF_LABEL).map(k=>`<button onclick="setScreenerTF('${k}')" class="topbar-tag${screenerTF===k?' active':''}" style="cursor:pointer">${TF_LABEL[k]}</button>`).join('');
+  if(tfEl) tfEl.innerHTML = Object.keys(TF_LABEL).map(k=>`<button onclick="setScreenerTF('${k}')" class="topbar-tag${screenerTF===k?' active':''}" style="cursor:${hist?'not-allowed':'pointer'};opacity:${hist?'0.4':'1'}"${hist?' title="Daily snapshot — timeframe disabled for past dates"':''}>${TF_LABEL[k]}</button>`).join('');
   const colEl=document.getElementById('screener-cols');
   if(colEl) colEl.innerHTML = SCREENER_COLS.map(c=>`<button onclick="toggleScreenerCol('${c.key}')" class="topbar-tag${screenerHidden[c.key]?'':' active'}" style="cursor:pointer" title="Click to ${screenerHidden[c.key]?'show':'hide'}">${screenerHidden[c.key]?'':'✓ '}${c.label}</button>`).join('');
+  const dateEl=document.getElementById('screener-date');
+  if(dateEl){ dateEl.max=_scrToday(); if(dateEl.value!==screenerDate) dateEl.value=screenerDate; }
+  const liveBtn=document.getElementById('scr-live');
+  if(liveBtn) liveBtn.classList.toggle('active', !screenerDate);
 }
 function _sparkline(vals, up){
   if(!vals || vals.length<2) return '<span style="color:rgba(255,255,255,0.2);font-size:11px">—</span>';
@@ -4285,22 +4348,25 @@ function _sparkline(vals, up){
   const lastX=w, lastY=(h-1-((vals[vals.length-1]-min)/range)*(h-2)).toFixed(1);
   return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block"><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.5" stroke-linejoin="round"/><circle cx="${lastX}" cy="${lastY}" r="1.8" fill="${col}"/></svg>`;
 }
+function _dirColor(d){ return d>0?'var(--green)':d<0?'var(--red)':'var(--text)'; }
 function _screenerCell(key,v){
-  const up=v.up, g='color:var(--green);font-weight:700', norm='color:var(--text)';
   switch(key){
-    case 'symbol': return `<td class="td-ticker">${v.sym}</td>`;
-    case 'chg': {
-      if(!v.prevClose) return `<td style="color:rgba(255,255,255,0.3)">—</td>`;
-      const pct=((v.price-v.prevClose)/v.prevClose)*100;
-      const c=pct>=0?'var(--green)':'var(--red)';
-      return `<td style="font-family:var(--fd);font-weight:700;color:${c}">${pct>=0?'+':''}${pct.toFixed(2)}%</td>`;
-    }
-    case 'avgvol': return `<td style="font-family:var(--fd)">${_fmtBig(v.avgVol)}</td>`;
-    case 'avgdol': return `<td style="font-family:var(--fd)">$${_fmtBig(v.avgVol*v.price)}</td>`;
-    case 'curvol': return `<td style="font-family:var(--fd);${up?g:norm}">${_fmtBig(v.curVol)}</td>`;
-    case 'curdol': return `<td style="font-family:var(--fd);${up?g:norm}">$${_fmtBig(v.curVol*v.price)}</td>`;
-    case 'rvol':   return `<td style="font-family:var(--fd);font-weight:700;color:${v.rvol>=1?'var(--green)':'var(--muted)'}">${v.rvol?v.rvol.toFixed(2)+'×':'—'}</td>`;
-    case 'volchart': return `<td title="Volume over recent ${TF_LABEL[screenerTF]||screenerTF} bars">${_sparkline(v.volSeries, up)}</td>`;
+    case 'symbol':
+      return `<td><span class="td-ticker" onclick="cycleScreenerHL('${v.sym}')" title="Click to cycle highlight" style="cursor:pointer;padding:1px 7px;border-radius:4px;background:${_scrHLbg(v.sym)};transition:background .15s">${v.sym}</span></td>`;
+    case 'mktcap':
+      return (v.marketCap==null)
+        ? `<td style="font-family:var(--fd);color:rgba(255,255,255,0.3)">—</td>`
+        : `<td style="font-family:var(--fd)">${v.mktCapApprox?'≈':''}${_fmtDollarFull(v.marketCap)}</td>`;
+    case 'voldollar':
+      return `<td style="font-family:var(--fd);font-weight:600;color:${_dirColor(_volDollarDir[v.sym]||0)}">${_fmtDollarFull(v.curVol*v.price)}</td>`;
+    case 'avgdollar':
+      return `<td style="font-family:var(--fd)">${_fmtDollarFull(v.avgDollar20d)}</td>`;
+    case 'price':
+      return `<td style="font-family:var(--fd)">${_fmtPrice(v.price)}</td>`;
+    case 'rvol':
+      return `<td style="font-family:var(--fd);font-weight:700;color:${_dirColor(_rvolDir[v.sym]||0)}">${v.rvol?v.rvol.toFixed(2)+'×':'—'}</td>`;
+    case 'volchart':
+      return `<td title="Volume — recent ${TF_LABEL[screenerTF]||screenerTF} bars">${_sparkline(v.volSeries, v.up)}</td>`;
   }
   return '';
 }
@@ -4326,10 +4392,14 @@ function renderScreener(quotes){
     let v = null;
     if(q && !q.error){
       const avgVol=q.avgVol||0, curVol=q.curVol||0, price=q.price||0;
-      v={ sym, avgVol, curVol, price, prevClose:q.prevClose||0, volSeries:q.volSeries||[], rvol: avgVol?curVol/avgVol:0, up: curVol>avgVol };
+      v={ sym, avgVol, curVol, price, prevClose:q.prevClose||0,
+          marketCap:(q.marketCap!=null?q.marketCap:null), mktCapApprox:!!q.mktCapApprox,
+          avgDollar20d:(q.avgDollar20d!=null?q.avgDollar20d:null),
+          volSeries:q.volSeries||[], rvol: avgVol?curVol/avgVol:0, up: curVol>avgVol };
     }
     return { sym, q, v };
   });
+  if(screenerSort.key && !SCREENER_SORTABLE.has(screenerSort.key)) screenerSort.key=null; // drop stale/removed keys
   if(screenerSort.key){
     const k=screenerSort.key, dir=(screenerSort.dir==='asc'?1:-1);
     rows.sort((a,b)=>{
@@ -4351,19 +4421,41 @@ function renderScreener(quotes){
 let _screenerLoading=false;
 async function loadScreener(force){
   const status=document.getElementById('screener-status');
+  renderScreenerControls();
   if(!screenerSymbols.length){ renderScreener(); if(status)status.textContent=''; return; }
   if(_screenerLoading && !force) return;
   _screenerLoading=true;
   renderScreener(_lastQuotes); // keep showing last data while refreshing
-  if(status) status.textContent='Fetching live data ('+(TF_LABEL[screenerTF]||screenerTF)+')…';
+  if(status) status.textContent = screenerDate
+    ? ('Loading daily snapshot for '+screenerDate+'…')
+    : ('Fetching live data ('+(TF_LABEL[screenerTF]||screenerTF)+')…');
+  // Snapshot the previous load's metrics so we can color Vol Traded ($) / RVOL green↑ / red↓.
+  const prevVD={}, prevRV={};
+  Object.keys(_lastQuotes).forEach(s=>{ const q=_lastQuotes[s]; if(q&&!q.error){ prevVD[s]=(q.curVol||0)*(q.price||0); prevRV[s]=(q.avgVol?(q.curVol||0)/q.avgVol:0); } });
+  const dateParam = screenerDate ? ('&date='+encodeURIComponent(screenerDate)) : '';
   const quotes={};
   await Promise.all(screenerSymbols.map(async sym=>{
-    try{ const r=await fetch('/api/quote?symbol='+encodeURIComponent(sym)+'&tf='+encodeURIComponent(screenerTF)); quotes[sym]=await r.json(); }
+    try{ const r=await fetch('/api/quote?symbol='+encodeURIComponent(sym)+'&tf='+encodeURIComponent(screenerTF)+dateParam); quotes[sym]=await r.json(); }
     catch(e){ quotes[sym]={symbol:sym,error:'offline'}; }
   }));
+  // Direction vs previous load (neutral on first sight / no change).
+  screenerSymbols.forEach(sym=>{
+    const q=quotes[sym]; if(!q||q.error) return;
+    const vd=(q.curVol||0)*(q.price||0), rv=(q.avgVol?(q.curVol||0)/q.avgVol:0);
+    _volDollarDir[sym]=(prevVD[sym]==null)?0:(vd>prevVD[sym]?1:vd<prevVD[sym]?-1:0);
+    _rvolDir[sym]=(prevRV[sym]==null)?0:(rv>prevRV[sym]?1:rv<prevRV[sym]?-1:0);
+  });
   _lastQuotes=quotes;
   renderScreener(quotes);
-  if(status) status.textContent=(TF_LABEL[screenerTF]||screenerTF)+' · updated '+new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  if(status){
+    if(screenerDate){
+      let asOf=screenerDate;
+      for(const s of screenerSymbols){ const q=quotes[s]; if(q&&q.asOf){ asOf=q.asOf; break; } }
+      status.textContent='Daily snapshot · as of '+asOf+' (close of day)';
+    } else {
+      status.textContent=(TF_LABEL[screenerTF]||screenerTF)+' · updated '+new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    }
+  }
   _screenerLoading=false;
 }
 
@@ -6003,6 +6095,8 @@ function collectData() {
     screenerTF: screenerTF,
     screenerHidden: screenerHidden,
     screenerSort: screenerSort,
+    screenerDate: screenerDate,
+    screenerHighlights: screenerHighlights,
     rcRoutineRows: RC_ROUTINE_ROWS,
     rcMgmtRows: RC_MGMT_ROWS,
     todTrades: todTrades,
@@ -6151,6 +6245,8 @@ async function loadSavedData() {
     if (d.screenerTF) screenerTF = d.screenerTF;
     if (d.screenerHidden && typeof d.screenerHidden === 'object') Object.assign(screenerHidden, d.screenerHidden);
     if (d.screenerSort && typeof d.screenerSort === 'object') Object.assign(screenerSort, d.screenerSort);
+    if (typeof d.screenerDate === 'string') screenerDate = d.screenerDate;
+    if (d.screenerHighlights && typeof d.screenerHighlights === 'object') Object.assign(screenerHighlights, d.screenerHighlights);
     // Restore Trades of the Day
     if (d.todTrades && d.todTrades.length) {
       todTrades.push(...d.todTrades);
@@ -6397,7 +6493,7 @@ setInterval(function(){ try { updateDailyStopBanner(); } catch(e){} }, 300000);
 setInterval(function(){
   try {
     const p = document.getElementById('page-screener');
-    if (p && p.classList.contains('active') && typeof screenerSymbols !== 'undefined' && screenerSymbols.length) loadScreener(true);
+    if (p && p.classList.contains('active') && typeof screenerSymbols !== 'undefined' && screenerSymbols.length && !screenerDate) loadScreener(true);
   } catch(e){}
 }, 45000);
 </script>
