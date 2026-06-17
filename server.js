@@ -198,7 +198,9 @@ async function yfAuth() {
   _yfAuth = { cookie, crumb, ts: Date.now() };
   return _yfAuth;
 }
-async function yfMarketCap(symbol) {
+// Authenticated v7 quote → { marketCap, marketState, regularChg, preChg, postChg } (best-effort, null on failure).
+// Carries the pre/post-market change so the screener can show an extended-hours % change.
+async function yfQuoteInfo(symbol) {
   try {
     const { cookie, crumb } = await yfAuth();
     if (!crumb) return null;
@@ -207,9 +209,25 @@ async function yfMarketCap(symbol) {
     const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Cookie': cookie } });
     if (!r.ok) return null;
     const j = await r.json();
-    const res0 = j && j.quoteResponse && j.quoteResponse.result && j.quoteResponse.result[0];
-    return (res0 && typeof res0.marketCap === 'number') ? res0.marketCap : null;
+    const q = j && j.quoteResponse && j.quoteResponse.result && j.quoteResponse.result[0];
+    if (!q) return null;
+    const num = x => (typeof x === 'number' && isFinite(x)) ? x : null;
+    return {
+      marketCap: num(q.marketCap),
+      marketState: q.marketState || '',
+      regularChg: num(q.regularMarketChangePercent),
+      preChg: num(q.preMarketChangePercent),
+      postChg: num(q.postMarketChangePercent)
+    };
   } catch (e) { return null; }
+}
+// Extended-hours-aware % change vs the regular close: pre-market in PRE, post-market in POST/CLOSED, else regular.
+function pickChangePct(info) {
+  if (!info) return { changePct: null, phase: 'regular' };
+  const st = (info.marketState || '').toUpperCase();
+  if ((st === 'PRE' || st === 'PREPRE') && info.preChg != null) return { changePct: info.preChg, phase: 'pre' };
+  if ((st === 'POST' || st === 'POSTPOST' || st === 'CLOSED') && info.postChg != null) return { changePct: info.postChg, phase: 'post' };
+  return { changePct: info.regularChg, phase: 'regular' };
 }
 
 // Daily {t, c, v} bars (non-null) from a daily chart result.
@@ -234,11 +252,12 @@ async function fetchQuote(symbol, tf) {
   const isIntraday = !!(tf && tf !== '1d');
   // selected-timeframe chart (price/volumes/sparkline), a daily chart for the 20-day $ avg
   // (reuse the timeframe chart when tf is already daily), and the market cap (best-effort).
-  const [tfRes, dailyExtra, mcap] = await Promise.all([
+  const [tfRes, dailyExtra, info] = await Promise.all([
     yfChart(symbol, cfg.interval, cfg.range),
     (tf === '1d') ? Promise.resolve(null) : yfChart(symbol, '1d', '2mo'),
-    yfMarketCap(symbol)
+    yfQuoteInfo(symbol)
   ]);
+  const mcap = info ? info.marketCap : null;
   if (!tfRes) return { symbol, error: 'no data' };
   const meta = tfRes.meta || {};
   const q = (tfRes.indicators && tfRes.indicators.quote && tfRes.indicators.quote[0]) || {};
@@ -263,7 +282,10 @@ async function fetchQuote(symbol, tf) {
   }
   const bars = dailyBars(tf === '1d' ? tfRes : dailyExtra);
   const avgDollar20d = bars.length ? avgDollar20(bars) : null;
-  return { symbol, price, avgVol, curVol, prevClose, volSeries, dayVol, avgDollar20d, marketCap: mcap, tf: tf || '1d' };
+  // Extended-hours-aware % change (falls back to a chart-derived regular change if v7 is unavailable).
+  let { changePct, phase } = pickChangePct(info);
+  if (changePct == null && prevClose) { changePct = ((price - prevClose) / prevClose) * 100; phase = 'regular'; }
+  return { symbol, price, avgVol, curVol, prevClose, volSeries, dayVol, avgDollar20d, marketCap: mcap, changePct, phase, tf: tf || '1d' };
 }
 
 // Pick the Yahoo daily range wide enough to include the requested historical date.
@@ -276,10 +298,11 @@ function rangeForDate(dateStr) {
   return '10y';
 }
 async function fetchQuoteHistorical(symbol, dateStr) {
-  const [dailyRes, mcapNow] = await Promise.all([
+  const [dailyRes, infoNow] = await Promise.all([
     yfChart(symbol, '1d', rangeForDate(dateStr)),
-    yfMarketCap(symbol)
+    yfQuoteInfo(symbol)
   ]);
+  const mcapNow = infoNow ? infoNow.marketCap : null;
   if (!dailyRes) return { symbol, error: 'no data' };
   const bars = dailyBars(dailyRes);
   if (!bars.length) return { symbol, error: 'no data' };
@@ -303,7 +326,8 @@ async function fetchQuoteHistorical(symbol, dateStr) {
   let marketCap = null, mktCapApprox = false;
   const latestClose = bars[bars.length - 1].c;
   if (mcapNow != null && latestClose) { marketCap = Math.round(mcapNow / latestClose * bar.c); mktCapApprox = true; }
-  return { symbol, price, avgVol, curVol, prevClose, volSeries, dayVol, avgDollar20d, marketCap, mktCapApprox, asOf, tf: 'historical' };
+  const changePct = prevClose ? ((bar.c - prevClose) / prevClose) * 100 : null;
+  return { symbol, price, avgVol, curVol, prevClose, volSeries, dayVol, avgDollar20d, marketCap, mktCapApprox, asOf, changePct, phase: 'regular', tf: 'historical' };
 }
 
 app.get('/api/quote', async (req, res) => {
