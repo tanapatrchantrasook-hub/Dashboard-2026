@@ -288,6 +288,7 @@ input[type=file]{display:none}
   <div class="nav-item" id="nav-study" onclick="switchPage('study')"><i class="ti ti-school"></i> Studies &amp; Resources</div>
   <div class="nav-divider"></div>
   <div class="nav-item" id="nav-analysis" onclick="switchPage('analysis');renderClaudeAnalysis()"><i class="ti ti-robot"></i> Claude Analysis &amp; Recommendation</div>
+  <div id="session-panel" style="margin-top:auto;padding:14px 18px 6px;border-top:0.5px solid var(--border)"></div>
 </div>
 
 <!-- MAIN -->
@@ -3249,6 +3250,7 @@ renderPlaybook2();
 renderPerformance();
 initTradeMgmtDropdown();
 renderPsychLog();
+renderSessionPanel();
 
 </script>
 <!-- NEWS MODAL -->
@@ -3768,6 +3770,57 @@ function getSession(entryTime) {
   }) || null;
 }
 
+// ── BOTTOM-LEFT SESSION PANEL ─────────────────────────────────
+// Shows the current US session (BKK time) + the setups historically traded in that window.
+const SESSION_PANEL_COLORS = {
+  'Opening Session': '#4caf85', // green
+  'Mid Morning':     '#e8c14a', // yellow
+  'Lunchtime Lull':  '#e0852a', // orange
+  'Power Hour':      '#e57368'  // red
+};
+const SESSION_PANEL_LABELS = { 'Opening Session': 'Opening' };
+function _nowBKKHHMM(){
+  return new Date().toLocaleTimeString('en-GB', { timeZone:'Asia/Bangkok', hour12:false, hour:'2-digit', minute:'2-digit' });
+}
+function _setupsInSession(sessionName){
+  const all = [...trades, ...(typeof todTrades!=='undefined'?todTrades:[])];
+  const counts = {};
+  all.forEach(t=>{
+    if(!t.entryTime) return;
+    const s = getSession(t.entryTime);
+    if(!s || s.name!==sessionName) return;
+    let names = [];
+    if(Array.isArray(t.setupNames)) names = t.setupNames;
+    else if(typeof t.setup==='string' && t.setup && t.setup!=='—') names = t.setup.split(' + ').map(x=>x.trim());
+    names.forEach(n=>{ if(n && n!=='—') counts[n]=(counts[n]||0)+1; });
+  });
+  return Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(e=>e[0]);
+}
+function renderSessionPanel(){
+  const el = document.getElementById('session-panel'); if(!el) return;
+  const sess = getSession(_nowBKKHHMM());
+  let html = '<div style="font-size:9px;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);margin-bottom:7px;font-family:var(--fd)">Current Session (BKK)</div>';
+  if(sess){
+    const col = SESSION_PANEL_COLORS[sess.name] || 'var(--muted)';
+    const disp = SESSION_PANEL_LABELS[sess.name] || sess.name;
+    html += `<div style="display:flex;align-items:center;gap:7px;margin-bottom:9px;flex-wrap:wrap">
+      <span style="width:9px;height:9px;border-radius:50%;background:${col};flex-shrink:0"></span>
+      <span style="font-size:13px;font-weight:700;color:${col}">${disp}</span>
+      <span style="font-size:10px;color:var(--muted);font-family:var(--fd)">${sess.start}–${sess.end}</span></div>`;
+    const setups = _setupsInSession(sess.name);
+    if(setups.length){
+      html += '<div style="font-size:9px;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-bottom:5px;font-family:var(--fd)">Potential setups</div>';
+      html += '<div style="display:flex;flex-direction:column;gap:3px">' +
+        setups.map(n=>`<div style="font-size:11px;color:var(--text);line-height:1.3"><span style="color:${col}">•</span> ${_escHtml(n)}</div>`).join('') + '</div>';
+    } else {
+      html += '<div style="font-size:10px;color:var(--muted);font-style:italic;line-height:1.4">No setups logged in this window yet.</div>';
+    }
+  } else {
+    html += '<div style="font-size:12px;color:var(--muted);margin-bottom:4px">US market closed</div>'
+          + '<div style="font-size:10px;color:var(--muted);font-style:italic;line-height:1.4">Next: Opening 20:30 BKK</div>';
+  }
+  el.innerHTML = html;
+}
 function renderSessionStats(tradeList, elId) {
   const el = document.getElementById(elId);
   if (!el) return;
@@ -6363,6 +6416,7 @@ async function loadSavedData() {
 
     try { updateDailyStopBanner(); } catch(e) {}
     dataReady = true; // data is now safely loaded — saving is allowed from here on
+    try { renderSessionPanel(); } catch(e) {} // populate the bottom-left session setups now trades exist
     console.log('✅ Dashboard data loaded from server.');
   } catch(e) {
     // Load failed — keep dataReady FALSE so we never overwrite the server/cloud with a blank page.
@@ -6432,6 +6486,7 @@ saveTrade = function() {
   if (typeof renderGoalStats === 'function') renderGoalStats(); // refresh Goal Tracker achievement stats
   renderSessionStats(trades,'session-stats-journal');
   renderSessionStats(todTrades,'session-stats-tod');
+  if (typeof renderSessionPanel === 'function') renderSessionPanel(); // refresh bottom-left session setups
   if (typeof updateDailyStopBanner === 'function') updateDailyStopBanner();
   scheduleSave();
 };
@@ -6542,6 +6597,8 @@ loadSavedData();
 // Re-evaluate the daily stop banner every 5 minutes so it clears automatically
 // when the trading day rolls over at 03:00 BKK (even if the dashboard is left open).
 setInterval(function(){ try { updateDailyStopBanner(); } catch(e){} }, 300000);
+// Bottom-left session panel — refresh each minute so the current-session highlight tracks BKK time
+setInterval(function(){ try { renderSessionPanel(); } catch(e){} }, 60000);
 // Stock Screener — auto-refresh live volume/price every 45s while the tab is open
 setInterval(function(){
   try {
