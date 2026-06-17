@@ -308,6 +308,7 @@ input[type=file]{display:none}
         </div>
       </div>
       <button onclick="toggleTheme()" id="theme-toggle" title="Switch theme" style="display:flex;align-items:center;gap:6px;background:transparent;border:0.5px solid var(--border2);border-radius:6px;padding:5px 12px;color:var(--muted);font-size:18px;cursor:pointer;font-family:var(--fb);transition:all .15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'"><span id="theme-label">☀️</span></button>
+      <button onclick="toggleZoom()" id="zoom-toggle" title="Bigger text" style="display:flex;align-items:center;justify-content:center;background:transparent;border:0.5px solid var(--border2);border-radius:6px;padding:5px 12px;color:var(--muted);font-size:18px;cursor:pointer;font-family:var(--fb);transition:all .15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'"><i class="ti ti-zoom-in" id="zoom-icon"></i></button>
     </div>
   </div>
   <div id="watch-strip" class="watch-strip"></div>
@@ -1248,6 +1249,17 @@ function toggleTheme(){
   if(document.getElementById('page-perf').classList.contains('active')) renderPerformance();
 }
 function themeAccent(){ return getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#e05c2a'; }
+
+// Bigger-text toggle (magnifier, top-right): scales the whole UI ~15% for larger screens.
+let uiZoomed = false;
+function applyZoom(){
+  document.body.style.zoom = uiZoomed ? '1.15' : '';
+  const ic = document.getElementById('zoom-icon');
+  if(ic) ic.className = uiZoomed ? 'ti ti-zoom-out' : 'ti ti-zoom-in';
+  const btn = document.getElementById('zoom-toggle');
+  if(btn) btn.title = uiZoomed ? 'Reset to normal text size' : 'Bigger text';
+}
+function toggleZoom(){ uiZoomed = !uiZoomed; applyZoom(); scheduleSave(); }
 
 function switchPage(key){
   if(typeof hideMajorityBanner==='function') hideMajorityBanner();
@@ -6125,6 +6137,7 @@ function collectData() {
     screenerDate: screenerDate,
     screenerHighlights: screenerHighlights,
     screenerColorFilter: screenerColorFilter,
+    uiZoomed: uiZoomed,
     rcRoutineRows: RC_ROUTINE_ROWS,
     rcMgmtRows: RC_MGMT_ROWS,
     todTrades: todTrades,
@@ -6276,6 +6289,7 @@ async function loadSavedData() {
     if (typeof d.screenerDate === 'string') screenerDate = d.screenerDate;
     if (d.screenerHighlights && typeof d.screenerHighlights === 'object') Object.assign(screenerHighlights, d.screenerHighlights);
     if (typeof d.screenerColorFilter === 'string') screenerColorFilter = d.screenerColorFilter;
+    if (typeof d.uiZoomed === 'boolean') { uiZoomed = d.uiZoomed; applyZoom(); }
     // Restore Trades of the Day
     if (d.todTrades && d.todTrades.length) {
       todTrades.push(...d.todTrades);
