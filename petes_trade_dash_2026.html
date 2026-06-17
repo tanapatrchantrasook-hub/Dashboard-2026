@@ -540,6 +540,10 @@ input[type=file]{display:none}
           <button class="topbar-tag" onclick="stepScreenerDate(1)" style="cursor:pointer" title="Next trading day">▶</button>
           <button class="topbar-tag" id="scr-live" onclick="screenerGoLive()" style="cursor:pointer" title="Back to live data">Live</button>
         </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;font-family:var(--fd)">Highlight</span>
+          <div id="screener-hlfilter" style="display:flex;gap:4px"></div>
+        </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;font-family:var(--fd)">Show columns</span>
           <div id="screener-cols" style="display:flex;gap:4px;flex-wrap:wrap"></div>
@@ -4223,6 +4227,7 @@ const screenerHidden = {};  // { colKey: true } when a column is hidden
 let screenerSort = { key:null, dir:'desc' }; // active sort column + direction
 let screenerDate = '';      // '' = live; otherwise 'YYYY-MM-DD' historical close-of-day
 const screenerHighlights = {}; // { SYMBOL: 'green'|'orange'|'yellow' } per-symbol chip backdrop
+let screenerColorFilter = ''; // '' = all; otherwise show only this highlight color
 let _lastQuotes = {};       // cache so toggling columns doesn't refetch
 const _volDollarDir = {};   // { SYMBOL: 1|-1|0 } vs previous load — colors Vol Traded ($)
 const _rvolDir = {};        // { SYMBOL: 1|-1|0 } vs previous load — colors RVOL
@@ -4317,6 +4322,11 @@ function setScreenerSort(key){
   renderScreener(_lastQuotes);
   scheduleSave();
 }
+// Highlight filter: show only stocks chipped with the chosen color (click active → back to All).
+function setScreenerColorFilter(color){
+  screenerColorFilter = (screenerColorFilter===color) ? '' : color;
+  renderScreenerControls(); renderScreener(_lastQuotes); scheduleSave();
+}
 function _screenerSortVal(key, v){
   if(!v) return null;
   switch(key){
@@ -4335,6 +4345,15 @@ function renderScreenerControls(){
   if(tfEl) tfEl.innerHTML = Object.keys(TF_LABEL).map(k=>`<button onclick="setScreenerTF('${k}')" class="topbar-tag${screenerTF===k?' active':''}" style="cursor:${hist?'not-allowed':'pointer'};opacity:${hist?'0.4':'1'}"${hist?' title="Daily snapshot — timeframe disabled for past dates"':''}>${TF_LABEL[k]}</button>`).join('');
   const colEl=document.getElementById('screener-cols');
   if(colEl) colEl.innerHTML = SCREENER_COLS.map(c=>`<button onclick="toggleScreenerCol('${c.key}')" class="topbar-tag${screenerHidden[c.key]?'':' active'}" style="cursor:pointer" title="Click to ${screenerHidden[c.key]?'show':'hide'}">${screenerHidden[c.key]?'':'✓ '}${c.label}</button>`).join('');
+  const hlEl=document.getElementById('screener-hlfilter');
+  if(hlEl){
+    const opts=[{k:'',label:'All',bg:''},{k:'green',label:'Green',bg:'rgba(63,185,80,0.32)'},{k:'orange',label:'Orange',bg:'rgba(224,92,42,0.32)'},{k:'yellow',label:'Yellow',bg:'rgba(240,200,60,0.40)'}];
+    hlEl.innerHTML = opts.map(o=>{
+      const active = screenerColorFilter===o.k;
+      const sw = o.bg ? `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${o.bg};margin-right:5px;vertical-align:middle"></span>` : '';
+      return `<button onclick="setScreenerColorFilter('${o.k}')" class="topbar-tag${active?' active':''}" style="cursor:pointer" title="${o.k?'Show only '+o.label.toLowerCase()+'-highlighted stocks':'Show all stocks'}">${sw}${o.label}</button>`;
+    }).join('');
+  }
   const dateEl=document.getElementById('screener-date');
   if(dateEl){ dateEl.max=_scrToday(); if(dateEl.value!==screenerDate) dateEl.value=screenerDate; }
   const liveBtn=document.getElementById('scr-live');
@@ -4386,8 +4405,16 @@ function renderScreener(quotes){
     return `<th${handler} style="${style}">${c.label}${arrow}</th>`;
   }).join('')+'<th></th></tr>';
   const rm = sym=>`<td><button onclick="removeScreenerSymbol('${sym}')" title="Remove" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:13px;cursor:pointer">✕</button></td>`;
+  // Highlight filter: when a color is selected, show only stocks chipped that color.
+  const visibleSymbols = screenerColorFilter
+    ? screenerSymbols.filter(s => screenerHighlights[s] === screenerColorFilter)
+    : screenerSymbols;
+  if(screenerColorFilter && !visibleSymbols.length){
+    tb.innerHTML = `<tr><td colspan="${cols.length+1}" style="font-size:12px;color:var(--muted);text-align:center;padding:20px">No ${screenerColorFilter}-highlighted stocks. Click a ticker to highlight it, or pick a different color.</td></tr>`;
+    return;
+  }
   // Build a row record per symbol, then sort if a column is active.
-  let rows = screenerSymbols.map(sym=>{
+  let rows = visibleSymbols.map(sym=>{
     const q = quotes && quotes[sym];
     let v = null;
     if(q && !q.error){
@@ -6097,6 +6124,7 @@ function collectData() {
     screenerSort: screenerSort,
     screenerDate: screenerDate,
     screenerHighlights: screenerHighlights,
+    screenerColorFilter: screenerColorFilter,
     rcRoutineRows: RC_ROUTINE_ROWS,
     rcMgmtRows: RC_MGMT_ROWS,
     todTrades: todTrades,
@@ -6247,6 +6275,7 @@ async function loadSavedData() {
     if (d.screenerSort && typeof d.screenerSort === 'object') Object.assign(screenerSort, d.screenerSort);
     if (typeof d.screenerDate === 'string') screenerDate = d.screenerDate;
     if (d.screenerHighlights && typeof d.screenerHighlights === 'object') Object.assign(screenerHighlights, d.screenerHighlights);
+    if (typeof d.screenerColorFilter === 'string') screenerColorFilter = d.screenerColorFilter;
     // Restore Trades of the Day
     if (d.todTrades && d.todTrades.length) {
       todTrades.push(...d.todTrades);
