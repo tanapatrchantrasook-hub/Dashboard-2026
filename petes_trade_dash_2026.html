@@ -4299,16 +4299,18 @@ const _rvolDir = {};        // { SYMBOL: 1|-1|0 } vs previous load — colors RV
 const SCREENER_COLS = [
   { key:'symbol',    label:'Symbol' },
   { key:'mktcap',    label:'Market Cap' },
+  { key:'volshares', label:'Vol Shares' },
   { key:'voldollar', label:'Vol Traded ($)' },
   { key:'avgdollar', label:'Avg D Vol 20D ($)' },
   { key:'price',     label:'Current Price' },
   { key:'chg',       label:'% Chg' },
   { key:'chgext',    label:'% Chg (ext)' },
   { key:'rvol',      label:'RVOL' },
-  { key:'volchart',  label:'Volume' },
+  { key:'volchart',  label:'Volume Chart' },
 ];
-const SCREENER_SORTABLE = new Set(['symbol','mktcap','voldollar','avgdollar','price','chg','chgext','rvol']);
+const SCREENER_SORTABLE = new Set(['symbol','mktcap','volshares','voldollar','avgdollar','price','chg','chgext','rvol']);
 function _fmtDollarFull(n){ return (n==null||isNaN(n)) ? '—' : '$'+Math.round(n).toLocaleString('en-US'); }
+function _fmtIntFull(n){ return (n==null||isNaN(n)) ? '—' : Math.round(n).toLocaleString('en-US'); }
 function _fmtPrice(p){ return (p==null||isNaN(p)) ? '—' : '$'+(p<1 ? Number(p).toFixed(4) : Number(p).toFixed(2)); }
 const TF_LABEL = { '1d':'Daily', '60m':'1h', '30m':'30m', '5m':'5m' };
 function _fmtBig(n){
@@ -4399,6 +4401,7 @@ function _screenerSortVal(key, v){
   switch(key){
     case 'symbol':    return v.sym;
     case 'mktcap':    return v.marketCap;        // null for ETFs → sinks to bottom
+    case 'volshares': return v.curVol;
     case 'voldollar': return v.curVol * v.price;
     case 'avgdollar': return v.avgDollar20d;     // may be null
     case 'price':     return v.price;
@@ -4445,6 +4448,8 @@ function _screenerCell(key,v){
       return (v.marketCap==null)
         ? `<td style="font-family:var(--fd);color:rgba(255,255,255,0.3)">—</td>`
         : `<td style="font-family:var(--fd)">${v.mktCapApprox?'≈':''}${_fmtDollarFull(v.marketCap)}</td>`;
+    case 'volshares':
+      return `<td style="font-family:var(--fd)" title="Shares traded (selected timeframe; Daily = full-day)">${_fmtIntFull(v.curVol)}</td>`;
     case 'voldollar':
       return `<td style="font-family:var(--fd);font-weight:600;color:${_dirColor(_volDollarDir[v.sym]||0)}">${_fmtDollarFull(v.curVol*v.price)}</td>`;
     case 'avgdollar':
