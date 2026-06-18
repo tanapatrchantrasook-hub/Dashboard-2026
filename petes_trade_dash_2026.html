@@ -4401,7 +4401,7 @@ function _screenerSortVal(key, v){
   switch(key){
     case 'symbol':    return v.sym;
     case 'mktcap':    return v.marketCap;        // null for ETFs → sinks to bottom
-    case 'volshares': return v.curVol;
+    case 'volshares': return v.dayVol;
     case 'voldollar': return v.curVol * v.price;
     case 'avgdollar': return v.avgDollar20d;     // may be null
     case 'price':     return v.price;
@@ -4449,7 +4449,7 @@ function _screenerCell(key,v){
         ? `<td style="font-family:var(--fd);color:rgba(255,255,255,0.3)">—</td>`
         : `<td style="font-family:var(--fd)">${v.mktCapApprox?'≈':''}${_fmtDollarFull(v.marketCap)}</td>`;
     case 'volshares':
-      return `<td style="font-family:var(--fd)" title="Shares traded (selected timeframe; Daily = full-day)">${_fmtIntFull(v.curVol)}</td>`;
+      return `<td style="font-family:var(--fd)" title="Total shares traded this session (full day)">${_fmtIntFull(v.dayVol)}</td>`;
     case 'voldollar':
       return `<td style="font-family:var(--fd);font-weight:600;color:${_dirColor(_volDollarDir[v.sym]||0)}">${_fmtDollarFull(v.curVol*v.price)}</td>`;
     case 'avgdollar':
@@ -4510,6 +4510,7 @@ function renderScreener(quotes){
           avgDollar20d:(q.avgDollar20d!=null?q.avgDollar20d:null),
           changePct:(q.changePct!=null?q.changePct:null), phase:(q.phase||'regular'),
           regularChangePct:(q.regularChangePct!=null?q.regularChangePct:null),
+          dayVol:(q.dayVol!=null?q.dayVol:(q.curVol||0)),
           volSeries:q.volSeries||[], rvol: avgVol?curVol/avgVol:0, up: curVol>avgVol };
     }
     return { sym, q, v };
