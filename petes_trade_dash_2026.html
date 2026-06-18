@@ -4302,11 +4302,12 @@ const SCREENER_COLS = [
   { key:'voldollar', label:'Vol Traded ($)' },
   { key:'avgdollar', label:'Avg D Vol 20D ($)' },
   { key:'price',     label:'Current Price' },
+  { key:'chg',       label:'% Chg' },
   { key:'chgext',    label:'% Chg (ext)' },
   { key:'rvol',      label:'RVOL' },
   { key:'volchart',  label:'Volume' },
 ];
-const SCREENER_SORTABLE = new Set(['symbol','mktcap','voldollar','avgdollar','price','chgext','rvol']);
+const SCREENER_SORTABLE = new Set(['symbol','mktcap','voldollar','avgdollar','price','chg','chgext','rvol']);
 function _fmtDollarFull(n){ return (n==null||isNaN(n)) ? '—' : '$'+Math.round(n).toLocaleString('en-US'); }
 function _fmtPrice(p){ return (p==null||isNaN(p)) ? '—' : '$'+(p<1 ? Number(p).toFixed(4) : Number(p).toFixed(2)); }
 const TF_LABEL = { '1d':'Daily', '60m':'1h', '30m':'30m', '5m':'5m' };
@@ -4401,6 +4402,7 @@ function _screenerSortVal(key, v){
     case 'voldollar': return v.curVol * v.price;
     case 'avgdollar': return v.avgDollar20d;     // may be null
     case 'price':     return v.price;
+    case 'chg':       return v.regularChangePct; // may be null
     case 'chgext':    return v.changePct;        // may be null
     case 'rvol':      return v.rvol;
     default:          return null;               // volchart not sortable
@@ -4449,6 +4451,11 @@ function _screenerCell(key,v){
       return `<td style="font-family:var(--fd)">${_fmtDollarFull(v.avgDollar20d)}</td>`;
     case 'price':
       return `<td style="font-family:var(--fd)">${_fmtPrice(v.price)}</td>`;
+    case 'chg': {
+      if(v.regularChangePct==null) return `<td style="font-family:var(--fd);color:rgba(255,255,255,0.3)">—</td>`;
+      const c=v.regularChangePct>=0?'var(--green)':'var(--red)';
+      return `<td style="font-family:var(--fd);font-weight:700;color:${c}" title="Regular-session change vs prior close">${v.regularChangePct>=0?'+':''}${v.regularChangePct.toFixed(2)}%</td>`;
+    }
     case 'chgext': {
       if(v.changePct==null) return `<td style="font-family:var(--fd);color:rgba(255,255,255,0.3)">—</td>`;
       const c=v.changePct>=0?'var(--green)':'var(--red)';
@@ -4497,6 +4504,7 @@ function renderScreener(quotes){
           marketCap:(q.marketCap!=null?q.marketCap:null), mktCapApprox:!!q.mktCapApprox,
           avgDollar20d:(q.avgDollar20d!=null?q.avgDollar20d:null),
           changePct:(q.changePct!=null?q.changePct:null), phase:(q.phase||'regular'),
+          regularChangePct:(q.regularChangePct!=null?q.regularChangePct:null),
           volSeries:q.volSeries||[], rvol: avgVol?curVol/avgVol:0, up: curVol>avgVol };
     }
     return { sym, q, v };

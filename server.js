@@ -285,7 +285,10 @@ async function fetchQuote(symbol, tf) {
   // Extended-hours-aware % change (falls back to a chart-derived regular change if v7 is unavailable).
   let { changePct, phase } = pickChangePct(info);
   if (changePct == null && prevClose) { changePct = ((price - prevClose) / prevClose) * 100; phase = 'regular'; }
-  return { symbol, price, avgVol, curVol, prevClose, volSeries, dayVol, avgDollar20d, marketCap: mcap, changePct, phase, tf: tf || '1d' };
+  // Regular-session % change vs prior close (price = regularMarketPrice, so this stays "regular" even after hours).
+  const regularChangePct = (info && info.regularChg != null) ? info.regularChg
+                         : (prevClose ? ((price - prevClose) / prevClose) * 100 : null);
+  return { symbol, price, avgVol, curVol, prevClose, volSeries, dayVol, avgDollar20d, marketCap: mcap, changePct, phase, regularChangePct, tf: tf || '1d' };
 }
 
 // Pick the Yahoo daily range wide enough to include the requested historical date.
@@ -327,7 +330,7 @@ async function fetchQuoteHistorical(symbol, dateStr) {
   const latestClose = bars[bars.length - 1].c;
   if (mcapNow != null && latestClose) { marketCap = Math.round(mcapNow / latestClose * bar.c); mktCapApprox = true; }
   const changePct = prevClose ? ((bar.c - prevClose) / prevClose) * 100 : null;
-  return { symbol, price, avgVol, curVol, prevClose, volSeries, dayVol, avgDollar20d, marketCap, mktCapApprox, asOf, changePct, phase: 'regular', tf: 'historical' };
+  return { symbol, price, avgVol, curVol, prevClose, volSeries, dayVol, avgDollar20d, marketCap, mktCapApprox, asOf, changePct, phase: 'regular', regularChangePct: changePct, tf: 'historical' };
 }
 
 app.get('/api/quote', async (req, res) => {
