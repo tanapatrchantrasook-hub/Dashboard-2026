@@ -846,15 +846,24 @@ input[type=file]{display:none}
           #subtab-trade-mgmt .cl-items{gap:5px}
           #subtab-trade-mgmt .cl-item{padding:6px 12px}
           #subtab-trade-mgmt .cl-label{font-size:12px}
-          #tm-two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
-          @media(max-width:900px){#tm-two-col{grid-template-columns:1fr}}
         </style>
-        <div style="display:flex;align-items:center;gap:14px;background:var(--surface);border:0.5px solid var(--border2);border-left:2px solid var(--accent);border-radius:0 8px 8px 0;padding:9px 14px;margin-bottom:12px;flex-wrap:wrap">
-          <div style="display:flex;align-items:center;gap:8px">
-            <span class="form-label" style="margin:0;white-space:nowrap">Setup:</span>
-            <select class="form-select" id="tm-setup" onchange="renderTradeMgmt()" style="width:240px"><option value="">— Select a setup —</option></select>
+        <!-- Top row: setup selector (left) + the honest verdict (right) -->
+        <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;margin-bottom:12px">
+          <div style="flex:1;min-width:300px;display:flex;align-items:center;gap:14px;background:var(--surface);border:0.5px solid var(--border2);border-left:2px solid var(--accent);border-radius:0 8px 8px 0;padding:9px 14px;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="form-label" style="margin:0;white-space:nowrap">Setup:</span>
+              <select class="form-select" id="tm-setup" onchange="renderTradeMgmt()" style="width:240px"><option value="">— Select a setup —</option></select>
+            </div>
+            <div style="font-size:12px;color:var(--muted);line-height:1.5;flex:1;min-width:200px"><strong style="color:var(--accent2)">In a trade?</strong> Walk this before you touch the exit — let winners run.</div>
           </div>
-          <div style="font-size:12px;color:var(--muted);line-height:1.5;flex:1;min-width:220px"><strong style="color:var(--accent2)">In a trade?</strong> Walk this before you touch the exit — let winners run.</div>
+          <div id="tm-verdict-box" style="display:none;width:330px;flex-shrink:0;background:var(--surface);border:0.5px solid var(--border2);border-radius:8px;padding:10px 14px">
+            <div style="font-size:11px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:8px">The honest verdict</div>
+            <div style="display:flex;gap:8px">
+              <button class="wl-btn" id="tm-hold" style="flex:1;color:var(--muted);cursor:default;font-size:12px;padding:7px 8px">Hold the plan</button>
+              <button class="wl-btn" id="tm-exit" style="flex:1;color:var(--muted);cursor:default;font-size:12px;padding:7px 8px">Exit justified</button>
+            </div>
+            <div id="tm-verdict-msg" style="margin-top:9px;font-size:11px;line-height:1.5;display:none"></div>
+          </div>
         </div>
 
         <div id="tm-content" style="display:none">
@@ -865,52 +874,38 @@ input[type=file]{display:none}
             <div id="tm-history-note" style="font-size:11px;color:var(--muted);line-height:1.5"></div>
           </div>
 
-          <!-- Two-column body -->
-          <div id="tm-two-col">
-            <!-- LEFT COLUMN -->
-            <div>
-              <div class="section-block">
-                <div class="section-label">Pre-trade commitment — lock your exit plan</div>
-                <div id="tm-commitments" class="cl-items"></div>
-                <div id="tm-commit-bar" style="margin-top:10px;display:none;align-items:center;gap:10px;flex-wrap:wrap">
-                  <button class="modal-save-btn" id="tm-commit-btn" style="width:auto;padding:7px 16px;margin-top:0;font-size:12px" onclick="tmCommit()">Commit to this plan</button>
-                  <span id="tm-commit-status" style="font-size:11px;color:var(--muted)"></span>
-                </div>
-              </div>
-              <div class="section-block">
-                <div class="section-label">Core reminders</div>
-                <div id="tm-reminders" class="cl-items"></div>
-              </div>
-            </div>
-
-            <!-- RIGHT COLUMN -->
-            <div>
-              <div class="section-block">
-                <div class="section-label">Ask yourself before exiting</div>
-                <div id="tm-questions" class="cl-items"></div>
-              </div>
-              <div class="section-block">
-                <div class="section-label">Trailing options</div>
-                <div id="tm-trailing" class="cl-items"></div>
-              </div>
-              <div class="section-block">
-                <div class="section-label" id="tm-setup-label">Setup-specific notes</div>
-                <div id="tm-setup-specific" class="cl-items"></div>
-              </div>
+          <!-- 1) Pre Trade Commitment (add/edit/delete, independent per setup) -->
+          <div class="section-block">
+            <div class="section-label">Pre-trade commitment — lock your exit plan</div>
+            <div id="tm-commitments" class="cl-items"></div>
+            <div id="tm-commit-bar" style="margin-top:10px;display:none;align-items:center;gap:10px;flex-wrap:wrap">
+              <button class="modal-save-btn" id="tm-commit-btn" style="width:auto;padding:7px 16px;margin-top:0;font-size:12px" onclick="tmCommit()">Commit to this plan</button>
+              <span id="tm-commit-status" style="font-size:11px;color:var(--muted)"></span>
             </div>
           </div>
 
-          <!-- Verdict -->
-          <div style="background:var(--surface);border:0.5px solid var(--border2);border-radius:8px;padding:12px 16px;margin-top:8px">
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-              <div style="font-size:11px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase">The honest verdict</div>
-              <div style="font-size:11px;color:var(--muted)">Answer the questions — verdict lights up automatically (3+ decides)</div>
-            </div>
-            <div style="display:flex;gap:10px;flex-wrap:wrap">
-              <button class="wl-btn" id="tm-hold" style="flex:1;min-width:160px;color:var(--muted);cursor:default">Hold &amp; trust the plan</button>
-              <button class="wl-btn" id="tm-exit" style="flex:1;min-width:160px;color:var(--muted);cursor:default">Exit is justified</button>
-            </div>
-            <div id="tm-verdict-msg" style="margin-top:12px;font-size:13px;line-height:1.6;display:none"></div>
+          <!-- 2) Pre Exit Commitment (was "Ask yourself before exiting" — add/edit/delete, Yes/No) -->
+          <div class="section-block">
+            <div class="section-label">Pre Exit Commitment — ask yourself before exiting</div>
+            <div id="tm-questions" class="cl-items"></div>
+          </div>
+
+          <!-- 3) Core Reminders -->
+          <div class="section-block">
+            <div class="section-label">Core reminders</div>
+            <div id="tm-reminders" class="cl-items"></div>
+          </div>
+
+          <!-- Trailing options -->
+          <div class="section-block">
+            <div class="section-label">Trailing options</div>
+            <div id="tm-trailing" class="cl-items"></div>
+          </div>
+
+          <!-- Setup-specific notes -->
+          <div class="section-block">
+            <div class="section-label" id="tm-setup-label">Setup-specific notes</div>
+            <div id="tm-setup-specific" class="cl-items"></div>
           </div>
         </div>
 
@@ -2888,6 +2883,66 @@ const tmCoreQuestions = [
   { q:"Have I reached the 2nd candle of the aforementioned timeframe?", yes:"hold", no:"exit" }
 ];
 let tmActiveQuestions = tmCoreQuestions.slice(); // rebuilt per setup (may include a duration question)
+// Editable "Pre Exit Commitment" questions (text only). Seeded from the core questions; all use
+// yes→hold / no→exit. Persisted globally. Auto-generated duration questions are appended on top of these.
+let tmExitQuestions = tmCoreQuestions.map(q => q.q);
+function tmBuildActiveQuestions(name){
+  tmActiveQuestions = tmExitQuestions.map(q => ({ q, yes:'hold', no:'exit', editable:true }));
+  const tmAllTrades = [...trades, ...(typeof todTrades!=='undefined'?todTrades:[])];
+  const setupDurs = tmAllTrades.filter(t=>setupMatch(t,name)&&t.entryTime&&t.exitTime).map(t=>durMins(t.entryTime,t.exitTime)).filter(d=>d!=null);
+  if(setupDurs.length){
+    const avgDurMins=Math.round(setupDurs.reduce((a,b)=>a+b,0)/setupDurs.length);
+    tmActiveQuestions.push({ q:`Have you been in this trade up to the average trade duration (~${fmtMins(avgDurMins)}) for ${name}? <span style="color:var(--muted);font-size:11px">(${setupDurs.length} trade${setupDurs.length!==1?'s':''})</span>`, yes:'exit', no:'hold', editable:false });
+  }
+  const setupPDurs = tmAllTrades.filter(t=>setupMatch(t,name)&&t.entryTime&&t.potentialExitTime).map(t=>durMins(t.entryTime,t.potentialExitTime)).filter(d=>d!=null);
+  if(setupPDurs.length){
+    const avgPDur=Math.round(setupPDurs.reduce((a,b)=>a+b,0)/setupPDurs.length);
+    tmActiveQuestions.push({ q:`Have you reached the average <strong style="color:#6ecfa0">potential</strong> trade duration (~${fmtMins(avgPDur)}) for ${name}? <span style="color:var(--muted);font-size:11px">(${setupPDurs.length} trade${setupPDurs.length!==1?'s':''})</span>`, yes:'exit', no:'hold', editable:false });
+  }
+}
+function tmRenderQuestions(){
+  const id=parseInt(document.getElementById('tm-setup').value); const p=id?getPlay(id):null; if(!p) return;
+  tmBuildActiveQuestions(p.name);
+  const box=document.getElementById('tm-questions'); if(!box) return;
+  box.innerHTML = tmActiveQuestions.map((item,i)=>`
+    <div class="cl-item">
+      <div class="cl-label"${item.editable?` id="tmq-label-${i}"`:''}>${item.q}</div>
+      <div class="cl-btns">
+        <button class="cl-btn" id="tmq-${i}-yes" onclick="tmAnswer(${i},'yes')">Yes</button>
+        <button class="cl-btn" id="tmq-${i}-no" onclick="tmAnswer(${i},'no')">No</button>
+        ${item.editable?`<button class="cl-btn" title="Edit" onclick="tmEditQuestion(${i})">✎</button><button class="cl-btn" title="Delete" onclick="tmDeleteQuestion(${i})">🗑</button>`:''}
+      </div>
+    </div>`).join('')
+    + `<button onclick="tmAddQuestion()" style="margin-top:8px;align-self:flex-start;background:transparent;border:0.5px dashed var(--border2);color:var(--muted);border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:var(--fd)">+ Add reminder</button>`;
+}
+function tmResetVerdict(){
+  tmState.questionAnswers={};
+  const h=document.getElementById('tm-hold'), e=document.getElementById('tm-exit'), m=document.getElementById('tm-verdict-msg');
+  if(h){ h.classList.remove('win','active'); h.style.color='var(--muted)'; }
+  if(e){ e.classList.remove('loss','active'); e.style.color='var(--muted)'; }
+  if(m){ m.style.display='none'; }
+}
+function tmAddQuestion(){
+  tmExitQuestions.push('New reminder — click ✎ to edit');
+  tmResetVerdict(); scheduleSave(); tmRenderQuestions();
+  tmEditQuestion(tmExitQuestions.length-1);
+}
+function tmEditQuestion(i){
+  const el=document.getElementById('tmq-label-'+i); if(!el) return;
+  el.contentEditable=true; el.focus();
+  try{ document.execCommand('selectAll',false,null); }catch(e){}
+  el.onkeydown=(ev)=>{ if(ev.key==='Enter'){ ev.preventDefault(); el.blur(); } };
+  el.onblur=()=>{
+    el.contentEditable=false;
+    const txt=el.textContent.trim();
+    if(txt) tmExitQuestions[i]=txt; else tmExitQuestions.splice(i,1);
+    tmResetVerdict(); scheduleSave(); tmRenderQuestions();
+  };
+}
+function tmDeleteQuestion(i){
+  tmExitQuestions.splice(i,1);
+  tmResetVerdict(); scheduleSave(); tmRenderQuestions();
+}
 
 // Duration in minutes between two HH:MM times (handles crossing midnight)
 function durMins(e, x){
@@ -2995,9 +3050,11 @@ function renderTradeMgmt(){
   const id = parseInt(document.getElementById('tm-setup').value);
   const content = document.getElementById('tm-content');
   const empty = document.getElementById('tm-empty');
-  if (!id) { content.style.display='none'; empty.style.display='block'; return; }
+  const verdictBox = document.getElementById('tm-verdict-box');
+  if (!id) { content.style.display='none'; empty.style.display='block'; if(verdictBox) verdictBox.style.display='none'; return; }
   const p = getPlay(id);
   content.style.display='block'; empty.style.display='none';
+  if(verdictBox) verdictBox.style.display='block';
   tmState.reminders={}; tmState.questionAnswers={}; tmState.specific={}; tmState.trailing={}; tmState.commitments={}; tmState.committed=false;
   document.getElementById('tm-verdict-msg').style.display='none';
   document.getElementById('tm-hold').classList.remove('win','active'); document.getElementById('tm-hold').style.color='var(--muted)';
@@ -3033,39 +3090,7 @@ function renderTradeMgmt(){
   document.getElementById('tm-reminders').innerHTML = tmCoreReminders.map((r,i)=>`
     <div class="cl-item"><div class="cl-label">${r}</div><div class="cl-btns"><button class="cl-btn" id="tmr-${i}-y" onclick="tmSetYN('reminders',${i},'Y')">✓</button><button class="cl-btn" id="tmr-${i}-n" onclick="tmSetYN('reminders',${i},'N')">✗</button></div></div>`).join('');
   // Build the question list, adding a per-setup "average trade duration" question if we have data
-  tmActiveQuestions = tmCoreQuestions.slice();
-  const tmAllTrades = [...trades, ...(typeof todTrades!=='undefined'?todTrades:[])];
-  const setupDurs = tmAllTrades
-    .filter(t => setupMatch(t, p.name) && t.entryTime && t.exitTime)
-    .map(t => durMins(t.entryTime, t.exitTime))
-    .filter(d => d != null);
-  if (setupDurs.length) {
-    const avgDurMins = Math.round(setupDurs.reduce((a,b)=>a+b,0) / setupDurs.length);
-    tmActiveQuestions.push({
-      q: `Have you been in this trade up to the average trade duration (~${fmtMins(avgDurMins)}) for ${p.name}? <span style="color:var(--muted);font-size:11px">(${setupDurs.length} trade${setupDurs.length!==1?'s':''})</span>`,
-      yes: 'exit', no: 'hold'
-    });
-  }
-  // Average POTENTIAL trade duration (entry → potential exit) — "have you let it run to its potential length?"
-  const setupPDurs = tmAllTrades
-    .filter(t => setupMatch(t, p.name) && t.entryTime && t.potentialExitTime)
-    .map(t => durMins(t.entryTime, t.potentialExitTime))
-    .filter(d => d != null);
-  if (setupPDurs.length) {
-    const avgPDur = Math.round(setupPDurs.reduce((a,b)=>a+b,0) / setupPDurs.length);
-    tmActiveQuestions.push({
-      q: `Have you reached the average <strong style="color:#6ecfa0">potential</strong> trade duration (~${fmtMins(avgPDur)}) for ${p.name}? <span style="color:var(--muted);font-size:11px">(${setupPDurs.length} trade${setupPDurs.length!==1?'s':''})</span>`,
-      yes: 'exit', no: 'hold'
-    });
-  }
-  document.getElementById('tm-questions').innerHTML = tmActiveQuestions.map((item,i)=>`
-    <div class="cl-item">
-      <div class="cl-label">${item.q}</div>
-      <div class="cl-btns">
-        <button class="cl-btn" id="tmq-${i}-yes" onclick="tmAnswer(${i},'yes')">Yes</button>
-        <button class="cl-btn" id="tmq-${i}-no" onclick="tmAnswer(${i},'no')">No</button>
-      </div>
-    </div>`).join('');
+  tmRenderQuestions(); // editable Pre Exit Commitment list + auto duration questions
   document.getElementById('tm-trailing').innerHTML = tmTrailing.map((t,i)=>`
     <div class="cl-item"><div class="cl-label">${t}</div><div class="cl-btns"><button class="cl-btn" id="tmt-${i}-y" onclick="tmSetYN('trailing',${i},'Y')">✓</button><button class="cl-btn" id="tmt-${i}-n" onclick="tmSetYN('trailing',${i},'N')">✗</button></div></div>`).join('');
 
@@ -4393,6 +4418,14 @@ function setScreenerColorFilter(color){
   screenerColorFilter = (screenerColorFilter===color) ? '' : color;
   renderScreenerControls(); renderScreener(_lastQuotes); scheduleSave();
 }
+// Clear all per-symbol highlight chips (and drop any active color filter so rows reappear).
+function clearScreenerHighlights(){
+  if(!Object.keys(screenerHighlights).length){ screenerColorFilter=''; renderScreenerControls(); renderScreener(_lastQuotes); return; }
+  if(!confirm('Remove all highlight colors from your symbols?')) return;
+  for(const k in screenerHighlights) delete screenerHighlights[k];
+  screenerColorFilter='';
+  renderScreenerControls(); renderScreener(_lastQuotes); scheduleSave();
+}
 function _screenerSortVal(key, v){
   if(!v) return null;
   switch(key){
@@ -4419,7 +4452,7 @@ function renderScreenerControls(){
       const active = screenerColorFilter===o.k;
       const sw = o.bg ? `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${o.bg};margin-right:5px;vertical-align:middle"></span>` : '';
       return `<button onclick="setScreenerColorFilter('${o.k}')" class="topbar-tag${active?' active':''}" style="cursor:pointer" title="${o.k?'Show only '+o.label.toLowerCase()+'-highlighted stocks':'Show all stocks'}">${sw}${o.label}</button>`;
-    }).join('');
+    }).join('') + `<button onclick="clearScreenerHighlights()" class="topbar-tag" style="cursor:pointer" title="Remove all highlight colors from your symbols">✕ Clear</button>`;
   }
   const dateEl=document.getElementById('screener-date');
   if(dateEl){ dateEl.max=_scrToday(); if(dateEl.value!==screenerDate) dateEl.value=screenerDate; }
@@ -6182,6 +6215,7 @@ function collectData() {
     pbStore: pbStore,
     tmCommitStore: tmCommitStore,
     tmSetupSpecific: tmSetupSpecific,
+    tmExitQuestions: tmExitQuestions,
     studyList: studyList,
     psychNotes: psychNotes,
     psychLogs: psychLogs,
@@ -6284,6 +6318,10 @@ async function loadSavedData() {
     // Restore per-setup notes
     if (d.tmSetupSpecific) {
       Object.assign(tmSetupSpecific, d.tmSetupSpecific);
+    }
+    // Restore editable Pre Exit Commitment questions
+    if (Array.isArray(d.tmExitQuestions) && d.tmExitQuestions.length) {
+      tmExitQuestions = d.tmExitQuestions;
     }
     // Restore study list
     if (d.studyList && d.studyList.length) {
