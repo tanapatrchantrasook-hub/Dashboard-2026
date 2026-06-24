@@ -1,0 +1,63 @@
+<!-- ============================================================================
+     STOCK SCREENER — markup (portable)
+     ----------------------------------------------------------------------------
+     TWO pieces. Drop each into the matching spot in YOUR dashboard HTML.
+     Nothing here sets colors/fonts directly — it uses YOUR CSS vars/classes,
+     so it inherits your theme. See screener-INSTALL.md "Theme contract" for the
+     small list of class names / CSS variables it expects.
+     ============================================================================ -->
+
+
+<!-- (A) NAV ITEM — put this wherever your other sidebar/nav links live.
+     `switchPage('screener')` should be your app's existing page-router call.
+     The <i class="ti ..."> is a Tabler Icons glyph; swap for your icon set if
+     you don't use Tabler. -->
+<div class="nav-item" id="nav-screener" onclick="switchPage('screener')"><i class="ti ti-filter-search"></i> Stock Screener</div>
+
+
+<!-- (B) PAGE BODY — put this alongside your other `.page` sections.
+     Your router must add class "active" to #page-screener when shown (that's how
+     the auto-refresh + initial load detect visibility). `.tl-page`, `.add-trade-btn`,
+     `.topbar-tag`, `.log-table`, `.empty-log` are YOUR existing classes — rename
+     to match your dashboard's equivalents if they differ. -->
+<div class="page" id="page-screener">
+  <div class="tl-page">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-family:var(--fd);font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text)">Stock Screener</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">Live volume &amp; relative-volume (RVOL) for your symbols · green = current above average</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="add-trade-btn" onclick="addScreenerSymbol()"><i class="ti ti-plus"></i> Add Symbol</button>
+        <button class="add-trade-btn" style="background:transparent;border:0.5px solid var(--border2);color:var(--muted)" onclick="loadScreener(true)"><i class="ti ti-refresh"></i> Refresh</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:center;margin-bottom:18px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;font-family:var(--fd)">Timeframe</span>
+        <div id="screener-tf" style="display:flex;gap:4px"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;font-family:var(--fd)">Date</span>
+        <button class="topbar-tag" onclick="stepScreenerDate(-1)" style="cursor:pointer" title="Previous trading day">◀</button>
+        <input type="date" id="screener-date" onchange="onScreenerDateChange()" style="background:var(--surface);border:0.5px solid var(--border2);color:var(--text);border-radius:4px;padding:4px 8px;font-size:12px;font-family:var(--fd)">
+        <button class="topbar-tag" onclick="stepScreenerDate(1)" style="cursor:pointer" title="Next trading day">▶</button>
+        <button class="topbar-tag" id="scr-live" onclick="screenerGoLive()" style="cursor:pointer" title="Back to live data">Live</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;font-family:var(--fd)">Highlight</span>
+        <div id="screener-hlfilter" style="display:flex;gap:4px"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;font-family:var(--fd)">Show columns</span>
+        <div id="screener-cols" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+      </div>
+    </div>
+    <div class="empty-log" id="screener-empty">No symbols yet — hit "Add Symbol" to start screening.</div>
+    <table class="log-table" id="screener-table" style="display:none">
+      <thead id="screener-thead"></thead>
+      <tbody id="screener-tbody"></tbody>
+    </table>
+    <div id="screener-status" style="font-size:11px;color:var(--muted);margin-top:12px;text-align:right;font-family:var(--fd)"></div>
+  </div>
+</div>
