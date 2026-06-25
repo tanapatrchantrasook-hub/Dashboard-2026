@@ -478,7 +478,7 @@ input[type=file]{display:none}
           </div>
           <canvas id="equity-chart" height="95"></canvas>
         </div>
-        <div class="chart-card"><div class="chart-title">Total PnL — Per Trade ($)</div><canvas id="pnl-chart" height="150"></canvas></div>
+        <div class="chart-card"><div class="chart-title">Total PnL — Per Trade ($) <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">· click a bar for trade details</span></div><canvas id="pnl-chart" height="150"></canvas><div id="pnl-trade-info" style="display:none;margin-top:12px;border-top:0.5px solid var(--border);padding-top:12px"></div></div>
         <div class="chart-card"><div class="chart-title">Avg Reward (R) by Day <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Potential: all trades · Actual: Trade Journal)</span></div><canvas id="rr-chart" height="150"></canvas></div>
         <div class="chart-card" id="mistakes-chart-card"><div class="chart-title">Mistakes Made</div><div id="mistakes-breakdown" style="margin-top:6px"></div></div>
       </div>
@@ -1701,6 +1701,36 @@ function previewImg(i){
 
 // ── PERFORMANCE ───────────────────────────────────────────────
 let eChart,rChart,mChart,pnlChart;
+// Click a bar in the "Total PnL — Per Trade ($)" chart to inspect that trade.
+function _pnlShowTrade(t){
+  const box=document.getElementById('pnl-trade-info'); if(!box||!t) return;
+  const ticked = !!(t.checks && t.checks[4]==='Y');
+  const notTicked = !!(t.checks && t.checks[4]==='N');
+  const pnl=(t.pnl||0), pnlCol=pnl>=0?'var(--green)':'var(--red)';
+  const wlTxt = t.wl==='W'?'Win':t.wl==='L'?'Loss':t.wl==='BE'?'Break-even':'—';
+  const wlCol = t.wl==='W'?'var(--green)':t.wl==='L'?'var(--red)':'var(--muted)';
+  const rrTickHTML = ticked
+    ? '<span style="font-weight:700;color:var(--green)">✓ Ticked</span>'
+    : (notTicked ? '<span style="font-weight:700;color:var(--red)">✗ Not ticked</span>'
+                 : '<span style="color:var(--muted)">— not set</span>');
+  const cell=(label,val)=>`<div><span style="color:var(--muted)">${label}:</span> <span style="font-family:var(--fd);color:var(--text)">${val}</span></div>`;
+  box.style.display='block';
+  box.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:9px">
+      <div style="font-family:var(--fd);font-size:13px;font-weight:700;color:var(--text)">${t.ticker||'?'} <span style="color:var(--muted);font-weight:400">· ${(typeof fmtDMY==='function'?fmtDMY(t.date):t.date)||'—'}</span></div>
+      <div style="font-family:var(--fd);font-size:14px;font-weight:700;color:${pnlCol}">${pnl>=0?'+':''}$${pnl.toLocaleString()}</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:7px 16px;font-size:12px;line-height:1.4">
+      <div><span style="color:var(--muted)">Setup:</span> <span style="color:var(--text)">${t.setup||'—'}</span></div>
+      <div><span style="color:var(--muted)">W/L:</span> <span style="color:${wlCol};font-weight:700">${wlTxt}</span></div>
+      ${cell('Planned RR', t.plannedRR||'—')}
+      ${cell('Actual RR', (t.actualRR||t.actualRR===0)?t.actualRR:'—')}
+      ${cell('RR Potential', (t.rrPot||t.rrPot===0)?t.rrPot:'—')}
+    </div>
+    <div style="margin-top:9px;font-size:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="color:var(--muted)">RR Potential Greater than Actual RR:</span> ${rrTickHTML}
+    </div>`;
+}
 const goals = []; // { id, name } — declared early; used by renderPerformance
 let nextGoalId = 1;
 const masterMistakes = []; // { id, name } — persists across trades
@@ -1750,7 +1780,8 @@ function renderPerformance(){
   const pnlData = allT.length ? allT.map(t => t.pnl || 0) : [0];
   const pnlLabels = allT.length ? allT.map(t => fmtDMY(t.date)||'—') : ['No trades'];
   if(pnlChart)pnlChart.destroy();
-  pnlChart=new Chart(document.getElementById('pnl-chart'),{type:'bar',data:{labels:pnlLabels,datasets:[{data:pnlData,backgroundColor:pnlData.map(v=>v>=0?'rgba(76,175,133,0.65)':'rgba(229,115,104,0.65)'),borderColor:pnlData.map(v=>v>=0?'#4caf85':'#e57368'),borderWidth:1,maxBarThickness:34,borderRadius:4}]},options:{...opts,scales:{x:{ticks:{color:'#888884',font:{size:10},maxRotation:90,minRotation:0},grid:{color:gc}},y:{ticks:{color:'#888884',font:{size:11},callback:v=>'$'+v},grid:{color:gc}}}}});
+  const _pnlTrades = allT.slice(); // bar index → this trade (for click-to-inspect)
+  pnlChart=new Chart(document.getElementById('pnl-chart'),{type:'bar',data:{labels:pnlLabels,datasets:[{data:pnlData,backgroundColor:pnlData.map(v=>v>=0?'rgba(76,175,133,0.65)':'rgba(229,115,104,0.65)'),borderColor:pnlData.map(v=>v>=0?'#4caf85':'#e57368'),borderWidth:1,maxBarThickness:34,borderRadius:4}]},options:{...opts,onClick:(evt,els)=>{ if(els&&els.length) _pnlShowTrade(_pnlTrades[els[0].index]); },onHover:(evt,els)=>{ if(evt.native&&evt.native.target) evt.native.target.style.cursor = (els&&els.length)?'pointer':'default'; },scales:{x:{ticks:{color:'#888884',font:{size:10},maxRotation:90,minRotation:0},grid:{color:gc}},y:{ticks:{color:'#888884',font:{size:11},callback:v=>'$'+v},grid:{color:gc}}}}});
   if(rChart)rChart.destroy();
   // Reward chart — BAR chart grouped by DAY, showing each day's AVERAGE RR:
   //  • Reward Potential (GREEN) — avg of "Reward Potential (R)" across ALL trades that day (Trade Journal + Trades of the Day)
