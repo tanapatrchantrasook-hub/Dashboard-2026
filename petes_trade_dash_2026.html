@@ -486,6 +486,16 @@ input[type=file]{display:none}
         <div class="chart-title">Setup Performance — Best Win Rate &amp; R:R <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Trade Journal)</span></div>
         <div id="setup-perf-content"></div>
       </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px">
+        <div class="chart-card">
+          <div class="chart-title">Trade Journal — Wins by Session (BKK)</div>
+          <div id="session-stats-journal"></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">Trades of the Day — Wins by Session (BKK)</div>
+          <div id="session-stats-tod"></div>
+        </div>
+      </div>
       <div class="chart-card" id="missed-trades-card" style="margin-top:14px">
         <div class="chart-title">Missed Trades — Reasons <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Trades of the Day)</span></div>
         <div id="missed-breakdown" style="margin-top:6px"></div>
@@ -497,16 +507,6 @@ input[type=file]{display:none}
       <div class="chart-card" id="breakeven-card" style="margin-top:14px">
         <div class="chart-title">Break-Even Trades <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Trade Journal)</span></div>
         <div id="breakeven-content"></div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px">
-        <div class="chart-card">
-          <div class="chart-title">Trade Journal — Wins by Session (BKK)</div>
-          <div id="session-stats-journal"></div>
-        </div>
-        <div class="chart-card">
-          <div class="chart-title">Trades of the Day — Wins by Session (BKK)</div>
-          <div id="session-stats-tod"></div>
-        </div>
       </div>
     </div>
   </div>
