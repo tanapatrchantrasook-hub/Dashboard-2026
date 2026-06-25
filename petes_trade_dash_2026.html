@@ -260,7 +260,7 @@ canvas{width:100%!important}
 input[type=file]{display:none}
 </style>
 </head>
-<body>
+<body class="theme-teal">
 <div class="layout">
 
 <!-- SIDEBAR -->
@@ -308,7 +308,7 @@ input[type=file]{display:none}
           <span id="sw-status" style="font-size:10px;font-weight:700;font-family:var(--fd);white-space:nowrap"></span>
         </div>
       </div>
-      <button onclick="toggleTheme()" id="theme-toggle" title="Switch theme" style="display:flex;align-items:center;gap:6px;background:transparent;border:0.5px solid var(--border2);border-radius:6px;padding:5px 12px;color:var(--muted);font-size:18px;cursor:pointer;font-family:var(--fb);transition:all .15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'"><span id="theme-label">☀️</span></button>
+      <button onclick="toggleTheme()" id="theme-toggle" title="Switch theme" style="display:flex;align-items:center;gap:6px;background:transparent;border:0.5px solid var(--border2);border-radius:6px;padding:5px 12px;color:var(--muted);font-size:18px;cursor:pointer;font-family:var(--fb);transition:all .15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'"><span id="theme-label">🌙</span></button>
       <button onclick="toggleZoom()" id="zoom-toggle" title="Bigger text" style="display:flex;align-items:center;justify-content:center;background:transparent;border:0.5px solid var(--border2);border-radius:6px;padding:5px 12px;color:var(--muted);font-size:18px;cursor:pointer;font-family:var(--fb);transition:all .15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'"><i class="ti ti-zoom-in" id="zoom-icon"></i></button>
     </div>
   </div>
@@ -1246,7 +1246,7 @@ const pageTitles={
   psychology:'TRADE <span style="color:var(--accent)">MANAGEMENT</span>',
   screener:'STOCK <span style="color:var(--accent)">SCREENER</span>',
 };
-let currentTheme='orange';
+let currentTheme='teal';
 function toggleTheme(){
   currentTheme = currentTheme==='orange' ? 'teal' : 'orange';
   document.body.classList.toggle('theme-teal', currentTheme==='teal');
