@@ -530,25 +530,38 @@ input[type=file]{display:none}
           <button class="add-trade-btn" style="background:transparent;border:0.5px solid var(--border2);color:var(--muted)" onclick="loadScreener(true)"><i class="ti ti-refresh"></i> Refresh</button>
         </div>
       </div>
+      <div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:0.5px solid var(--border2)">
+        <div class="subtab active" id="sctab-main" onclick="switchScreenerTab('main')">Screener</div>
+        <div class="subtab" id="sctab-scan" onclick="switchScreenerTab('scan')">Uptrend Scan</div>
+        <div class="subtab" id="sctab-matrix" onclick="switchScreenerTab('matrix')">Play Matrix</div>
+      </div>
+      <div id="sc-tab-main">
       <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:center;margin-bottom:18px">
         <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;font-family:var(--fd)">Search</span>
+          <div style="position:relative;display:inline-flex;align-items:center">
+            <i class="ti ti-search" style="position:absolute;left:9px;color:var(--muted);font-size:13px;pointer-events:none"></i>
+            <input type="text" id="screener-search" placeholder="Type a symbol…" oninput="setScreenerSearch(this.value)" class="form-input" style="width:150px;font-family:var(--fd);font-size:12px;text-transform:uppercase;padding-left:28px">
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;font-family:var(--fd)">Date</span>
+          <button onclick="screenerStepDate(-1)" title="Previous trading day" style="padding:5px 10px;background:transparent;border:0.5px solid var(--border2);color:var(--muted);border-radius:5px;font-size:13px;cursor:pointer">◀</button>
+          <input type="date" id="screener-date" class="form-input" style="width:150px;font-family:var(--fd);font-size:12px" onchange="setScreenerDate(this.value)">
+          <button onclick="screenerStepDate(1)" title="Next trading day" style="padding:5px 10px;background:transparent;border:0.5px solid var(--border2);color:var(--muted);border-radius:5px;font-size:13px;cursor:pointer">▶</button>
+          <button id="screener-live-btn" onclick="setScreenerDate('')" class="topbar-tag active" style="cursor:pointer" title="Show live / today's data">Live</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px" id="screener-tf-wrap">
           <span style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;font-family:var(--fd)">Timeframe</span>
           <div id="screener-tf" style="display:flex;gap:4px"></div>
-        </div>
-        <div style="display:flex;align-items:center;gap:6px">
-          <span style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;font-family:var(--fd)">Date</span>
-          <button class="topbar-tag" onclick="stepScreenerDate(-1)" style="cursor:pointer" title="Previous trading day">◀</button>
-          <input type="date" id="screener-date" onchange="onScreenerDateChange()" style="background:var(--surface);border:0.5px solid var(--border2);color:var(--text);border-radius:4px;padding:4px 8px;font-size:12px;font-family:var(--fd)">
-          <button class="topbar-tag" onclick="stepScreenerDate(1)" style="cursor:pointer" title="Next trading day">▶</button>
-          <button class="topbar-tag" id="scr-live" onclick="screenerGoLive()" style="cursor:pointer" title="Back to live data">Live</button>
-        </div>
-        <div style="display:flex;align-items:center;gap:6px">
-          <span style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;font-family:var(--fd)">Highlight</span>
-          <div id="screener-hlfilter" style="display:flex;gap:4px"></div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;font-family:var(--fd)">Show columns</span>
           <div id="screener-cols" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;font-family:var(--fd)">Highlight</span>
+          <div id="screener-filter" style="display:flex;gap:4px;flex-wrap:wrap"></div>
         </div>
       </div>
       <div class="empty-log" id="screener-empty">No symbols yet — hit "Add Symbol" to start screening.</div>
@@ -557,6 +570,9 @@ input[type=file]{display:none}
         <tbody id="screener-tbody"></tbody>
       </table>
       <div id="screener-status" style="font-size:11px;color:var(--muted);margin-top:12px;text-align:right;font-family:var(--fd)"></div>
+      </div>
+      <div id="sc-tab-scan" style="display:none"><div id="scan-section"></div></div>
+      <div id="sc-tab-matrix" style="display:none"><div id="matrix-section"></div></div>
     </div>
   </div>
 
@@ -1276,7 +1292,7 @@ function switchPage(key){
     setTimeout(()=>{renderSessionStats(trades,'session-stats-journal');renderSessionStats(todTrades,'session-stats-tod');},70);
   }
   if(key==='goals')setTimeout(renderGoals,50);
-  if(key==='screener'){ renderScreenerControls(); setTimeout(()=>loadScreener(),30); }
+  if(key==='screener'){ renderScreenerControls(); setTimeout(()=>loadScreener(),30); setTimeout(()=>{ if(typeof switchScreenerTab==='function') switchScreenerTab(screenerTab||'main'); },45); startScreenerAuto(); }
   if(key==='news'){
     // Always open on the Daily Watchlist subtab
     document.querySelectorAll('#page-news .subtab').forEach(t=>t.classList.remove('active'));
@@ -4314,27 +4330,74 @@ function renderWatchlist(mode){
 const screenerSymbols = []; // array of ticker strings
 let screenerTF = '1d';      // '1d' | '60m' | '30m' | '5m'
 const screenerHidden = {};  // { colKey: true } when a column is hidden
-let screenerSort = { key:null, dir:'desc' }; // active sort column + direction
-let screenerDate = '';      // '' = live; otherwise 'YYYY-MM-DD' historical close-of-day
-const screenerHighlights = {}; // { SYMBOL: 'green'|'orange'|'yellow' } per-symbol chip backdrop
-let screenerColorFilter = ''; // '' = all; otherwise show only this highlight color
+let screenerSort = { key:'', dir:'desc' }; // active sort column + direction ('asc'|'desc')
+let screenerDate = '';      // '' = live/today; 'YYYY-MM-DD' = daily snapshot as of that date
 let _lastQuotes = {};       // cache so toggling columns doesn't refetch
-const _volDollarDir = {};   // { SYMBOL: 1|-1|0 } vs previous load — colors Vol Traded ($)
-const _rvolDir = {};        // { SYMBOL: 1|-1|0 } vs previous load — colors RVOL
+let _screenerPrevVals = {}; // sym -> { vt, rvol } from the previous load (for up/down colouring)
+let _screenerTrend = {};    // sym -> { vt:'up'|'down'|'', rvol:'up'|'down'|'' } vs the previous timeframe/load
+const screenerSymbolColor = {}; // sym -> '' | 'green' | 'orange' | 'yellow' (manual highlight backdrop)
+const _SYM_BACKDROP = ['', 'green', 'orange', 'yellow']; // click cycle: none → green → orange → yellow → none
+const _SYM_BG = { green:'rgba(63,185,80,0.32)', orange:'rgba(224,92,42,0.32)', yellow:'rgba(240,200,60,0.4)' };
+// Re-render whichever screener sub-tab is active (highlight/filter changes are shared across all three)
+function _refreshScreenerView(){
+  if(typeof screenerTab!=='undefined' && screenerTab==='scan'){ if(typeof _renderScanTable==='function') _renderScanTable(); }
+  else if(typeof screenerTab!=='undefined' && screenerTab==='matrix'){ if(typeof renderMatrixSection==='function') renderMatrixSection(); }
+  else { renderScreener(_lastQuotes); }
+}
+function cycleSymbolColor(sym){
+  const cur = screenerSymbolColor[sym] || '';
+  const next = _SYM_BACKDROP[(_SYM_BACKDROP.indexOf(cur)+1) % _SYM_BACKDROP.length];
+  if(next) screenerSymbolColor[sym] = next; else delete screenerSymbolColor[sym];
+  _refreshScreenerView();
+  scheduleSave();
+}
+let screenerColorFilters = [];  // [] = All; or any of 'green'|'orange'|'yellow' (multi-select) — show those lists, grouped
+function setScreenerFilter(c){
+  if(!c){ screenerColorFilters = []; }                                    // "All" clears the selection
+  else if(screenerColorFilters.includes(c)){ screenerColorFilters = screenerColorFilters.filter(x=>x!==c); }  // toggle off
+  else { screenerColorFilters = [...screenerColorFilters, c]; }           // add this colour list
+  _refreshScreenerView();
+  scheduleSave();
+}
+// Clear ALL manual highlights back to none (and reset the highlight filter to All)
+function clearScreenerHighlights(){
+  Object.keys(screenerSymbolColor).forEach(k=>delete screenerSymbolColor[k]);
+  screenerColorFilters = [];
+  _refreshScreenerView();
+  scheduleSave();
+}
+// Shared highlight filter pills (All / Green / Orange / Yellow / Clear) — used by the scan tab
+function _highlightPillsHTML(){
+  const dot=col=>`<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${col};margin-right:5px;vertical-align:middle"></span>`;
+  const pills=[{k:'',label:'All',d:''},{k:'green',label:'Green',d:dot('rgba(63,185,80,0.9)')},{k:'orange',label:'Orange',d:dot('rgba(224,92,42,0.9)')},{k:'yellow',label:'Yellow',d:dot('rgba(240,200,60,1)')}];
+  const anyHi=Object.values(screenerSymbolColor).some(c=>c), act=k=>k?screenerColorFilters.includes(k):screenerColorFilters.length===0;
+  return pills.map(p=>`<button onclick="setScreenerFilter('${p.k}')" class="topbar-tag${act(p.k)?' active':''}" style="cursor:pointer">${p.d}${p.label}</button>`).join('')
+    +`<button onclick="clearScreenerHighlights()" class="topbar-tag" style="cursor:pointer;border-style:dashed${anyHi?'':';opacity:0.45'}"${anyHi?'':' disabled'}>✕ Clear</button>`;
+}
+let screenerSearch = '';  // transient symbol search box (not persisted)
+function setScreenerSearch(v){ screenerSearch = (v||'').trim().toUpperCase(); renderScreener(_lastQuotes); }
+// Auto-refresh live data while the screener tab is open (paused on a past date)
+let _screenerAutoTimer = null;
+function startScreenerAuto(){
+  if(_screenerAutoTimer) return;
+  _screenerAutoTimer = setInterval(()=>{
+    const pg = document.getElementById('page-screener');
+    if(pg && pg.classList.contains('active') && !screenerDate && !document.hidden && screenerSymbols.length){
+      loadScreener();
+    }
+  }, 45000);
+}
 const SCREENER_COLS = [
   { key:'symbol',    label:'Symbol' },
   { key:'mktcap',    label:'Market Cap' },
-  { key:'voldollar', label:'Vol Traded ($)' },
-  { key:'avgdollar', label:'Avg D Vol 20D ($)' },
+  { key:'voltraded', label:'Vol Traded ($)' },
+  { key:'avg20d',    label:'Avg D Vol 20D ($)' },
   { key:'price',     label:'Current Price' },
-  { key:'chg',       label:'% Chg' },
+  { key:'extchg',    label:'% Chg' },
   { key:'rvol',      label:'RVOL' },
   { key:'volchart',  label:'Volume Chart' },
 ];
-const SCREENER_SORTABLE = new Set(['symbol','mktcap','voldollar','avgdollar','price','chg','rvol']);
-function _fmtDollarFull(n){ return (n==null||isNaN(n)) ? '—' : '$'+Math.round(n).toLocaleString('en-US'); }
-function _fmtPrice(p){ return (p==null||isNaN(p)) ? '—' : '$'+(p<1 ? Number(p).toFixed(4) : Number(p).toFixed(2)); }
-const TF_LABEL = { '1d':'Daily', '60m':'1h', '30m':'30m', '5m':'5m' };
+const TF_LABEL = { '1d':'Daily', '4h':'4h', '2h':'2h', '60m':'1h', '30m':'30m', '15m':'15m', '5m':'5m', '1m':'1m' };
 function _fmtBig(n){
   n = Number(n)||0;
   if(n>=1e12) return (n/1e12).toFixed(2)+'T';
@@ -4343,121 +4406,64 @@ function _fmtBig(n){
   if(n>=1e3)  return (n/1e3).toFixed(1)+'K';
   return String(Math.round(n));
 }
+// Full number with thousands separators (e.g. 4,390,197,657,600) — for the $ columns.
+function _fmtFull(n){ return Math.round(Number(n)||0).toLocaleString('en-US'); }
 function addScreenerSymbol(){
   const raw = prompt('Add symbol(s) — separate multiple with commas (e.g. NVDA, AMD, SPY):');
   if(!raw) return;
   raw.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean).forEach(sym=>{ if(!screenerSymbols.includes(sym)) screenerSymbols.push(sym); });
   renderScreener();          // show rows immediately (loading)
   loadScreener(true);        // then fetch data
+  if(typeof screenerTab!=='undefined' && screenerTab==='scan' && typeof renderScanSection==='function') renderScanSection(true);   // pull the new symbol into the scan
   scheduleSave();
 }
 function removeScreenerSymbol(sym){
   const i = screenerSymbols.indexOf(sym); if(i>-1) screenerSymbols.splice(i,1);
   delete _lastQuotes[sym];
-  renderScreener(_lastQuotes);
+  if(typeof _scanData!=='undefined') _scanData = _scanData.filter(r=>r.symbol!==sym);   // drop from the scan too
+  _refreshScreenerView();
   scheduleSave();
 }
-function setScreenerTF(tf){ if(screenerDate) return; screenerTF = tf; renderScreenerControls(); loadScreener(true); scheduleSave(); }
-// Symbol highlight chip: cycle none → green → orange → yellow → none (persisted per symbol).
-function cycleScreenerHL(sym){
-  const order=[null,'green','orange','yellow'];
-  const next=order[(order.indexOf(screenerHighlights[sym]||null)+1)%order.length];
-  if(next) screenerHighlights[sym]=next; else delete screenerHighlights[sym];
-  renderScreener(_lastQuotes); scheduleSave();
-}
-function _scrHLbg(sym){
-  const h=screenerHighlights[sym];
-  return h==='green'?'rgba(63,185,80,0.32)':h==='orange'?'rgba(224,92,42,0.32)':h==='yellow'?'rgba(240,200,60,0.40)':'transparent';
-}
-// ── Date navigation (historical close-of-day snapshots) ──
-function _scrToday(){ return new Date().toISOString().slice(0,10); }
-function _scrIsWeekend(d){ const day=d.getUTCDay(); return day===0||day===6; }
-function _scrPrevTradingDay(dateStr){
-  const d=new Date((dateStr||_scrToday())+'T00:00:00Z');
-  do { d.setUTCDate(d.getUTCDate()-1); } while(_scrIsWeekend(d));
-  return d.toISOString().slice(0,10);
-}
-function _scrNextTradingDay(dateStr){
-  const d=new Date(dateStr+'T00:00:00Z');
-  do { d.setUTCDate(d.getUTCDate()+1); } while(_scrIsWeekend(d));
-  return d.toISOString().slice(0,10);
-}
-function stepScreenerDate(dir){
-  if(dir<0){
-    screenerDate=_scrPrevTradingDay(screenerDate||_scrToday());
-  } else {
-    if(!screenerDate) return;                 // already live
-    const nxt=_scrNextTradingDay(screenerDate);
-    if(nxt>=_scrToday()){ screenerGoLive(); return; }  // stepping into today → Live
-    screenerDate=nxt;
-  }
-  renderScreenerControls(); loadScreener(true); scheduleSave();
-}
-function onScreenerDateChange(){
-  const el=document.getElementById('screener-date');
-  const v=el?el.value:'';
-  if(v && v>=_scrToday()){ screenerGoLive(); return; } // today/future → Live
-  screenerDate=v||'';
-  renderScreenerControls(); loadScreener(true); scheduleSave();
-}
-function screenerGoLive(){
-  screenerDate='';
-  renderScreenerControls(); loadScreener(true); scheduleSave();
+function setScreenerTF(tf){ screenerTF = tf; renderScreenerControls(); loadScreener(true); scheduleSave(); }
+function setScreenerDate(d){ screenerDate = (d||'').trim(); renderScreenerControls(); loadScreener(true); scheduleSave(); }
+function screenerStepDate(dir){
+  const pad=n=>String(n).padStart(2,'0');
+  const today=new Date(); today.setHours(12,0,0,0);
+  let base = screenerDate ? new Date(screenerDate+'T12:00:00') : new Date(today);
+  base.setDate(base.getDate()+dir);
+  while(base.getDay()===0 || base.getDay()===6) base.setDate(base.getDate()+(dir<0?-1:1)); // skip weekends
+  if(dir>0 && base>=today){ setScreenerDate(''); return; }   // stepping forward into today/future → back to Live
+  setScreenerDate(base.getFullYear()+'-'+pad(base.getMonth()+1)+'-'+pad(base.getDate()));
 }
 function toggleScreenerCol(key){ screenerHidden[key] = !screenerHidden[key]; renderScreenerControls(); renderScreener(_lastQuotes); scheduleSave(); }
-// Sortable columns: click a header to sort, click again to flip direction.
-function setScreenerSort(key){
-  if(key==='volchart') return; // sparkline column isn't sortable
-  if(screenerSort.key===key){ screenerSort.dir = (screenerSort.dir==='desc'?'asc':'desc'); }
-  else { screenerSort.key = key; screenerSort.dir = (key==='symbol' ? 'asc' : 'desc'); }
-  renderScreener(_lastQuotes);
-  scheduleSave();
-}
-// Highlight filter: show only stocks chipped with the chosen color (click active → back to All).
-function setScreenerColorFilter(color){
-  screenerColorFilter = (screenerColorFilter===color) ? '' : color;
-  renderScreenerControls(); renderScreener(_lastQuotes); scheduleSave();
-}
-// Clear all per-symbol highlight chips (and drop any active color filter so rows reappear).
-function clearScreenerHighlights(){
-  if(!Object.keys(screenerHighlights).length){ screenerColorFilter=''; renderScreenerControls(); renderScreener(_lastQuotes); return; }
-  if(!confirm('Remove all highlight colors from your symbols?')) return;
-  for(const k in screenerHighlights) delete screenerHighlights[k];
-  screenerColorFilter='';
-  renderScreenerControls(); renderScreener(_lastQuotes); scheduleSave();
-}
-function _screenerSortVal(key, v){
-  if(!v) return null;
-  switch(key){
-    case 'symbol':    return v.sym;
-    case 'mktcap':    return v.marketCap;        // null for ETFs → sinks to bottom
-    case 'voldollar': return v.curVol * v.price;
-    case 'avgdollar': return v.avgDollar20d;     // may be null
-    case 'price':     return v.price;
-    case 'chg':       return v.changePct;        // extended-hours-aware; may be null
-    case 'rvol':      return v.rvol;
-    default:          return null;               // volchart not sortable
-  }
-}
 function renderScreenerControls(){
-  const hist = !!screenerDate;
+  // Date picker + Live button
+  const dInput=document.getElementById('screener-date');
+  if(dInput && document.activeElement!==dInput) dInput.value = screenerDate || '';
+  const liveBtn=document.getElementById('screener-live-btn');
+  if(liveBtn) liveBtn.className = 'topbar-tag' + (screenerDate ? '' : ' active');
+  // Intraday timeframes only apply to live data; for a past date the feed is daily close-of-day.
+  const tfWrap=document.getElementById('screener-tf-wrap');
+  if(tfWrap){ tfWrap.style.opacity = screenerDate ? '0.4' : '1'; tfWrap.style.pointerEvents = screenerDate ? 'none' : 'auto'; tfWrap.title = screenerDate ? 'Timeframes apply to live data only — a past date shows the daily close snapshot' : ''; }
   const tfEl=document.getElementById('screener-tf');
-  if(tfEl) tfEl.innerHTML = Object.keys(TF_LABEL).map(k=>`<button onclick="setScreenerTF('${k}')" class="topbar-tag${screenerTF===k?' active':''}" style="cursor:${hist?'not-allowed':'pointer'};opacity:${hist?'0.4':'1'}"${hist?' title="Daily snapshot — timeframe disabled for past dates"':''}>${TF_LABEL[k]}</button>`).join('');
+  if(tfEl) tfEl.innerHTML = Object.keys(TF_LABEL).map(k=>`<button onclick="setScreenerTF('${k}')" class="topbar-tag${screenerTF===k?' active':''}" style="cursor:pointer">${TF_LABEL[k]}</button>`).join('');
   const colEl=document.getElementById('screener-cols');
   if(colEl) colEl.innerHTML = SCREENER_COLS.map(c=>`<button onclick="toggleScreenerCol('${c.key}')" class="topbar-tag${screenerHidden[c.key]?'':' active'}" style="cursor:pointer" title="Click to ${screenerHidden[c.key]?'show':'hide'}">${screenerHidden[c.key]?'':'✓ '}${c.label}</button>`).join('');
-  const hlEl=document.getElementById('screener-hlfilter');
-  if(hlEl){
-    const opts=[{k:'',label:'All',bg:''},{k:'green',label:'Green',bg:'rgba(63,185,80,0.32)'},{k:'orange',label:'Orange',bg:'rgba(224,92,42,0.32)'},{k:'yellow',label:'Yellow',bg:'rgba(240,200,60,0.40)'}];
-    hlEl.innerHTML = opts.map(o=>{
-      const active = screenerColorFilter===o.k;
-      const sw = o.bg ? `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${o.bg};margin-right:5px;vertical-align:middle"></span>` : '';
-      return `<button onclick="setScreenerColorFilter('${o.k}')" class="topbar-tag${active?' active':''}" style="cursor:pointer" title="${o.k?'Show only '+o.label.toLowerCase()+'-highlighted stocks':'Show all stocks'}">${sw}${o.label}</button>`;
-    }).join('') + `<button onclick="clearScreenerHighlights()" class="topbar-tag" style="cursor:pointer" title="Remove all highlight colors from your symbols">✕ Clear</button>`;
+  // Highlight filter pills: All / Green / Orange / Yellow (show only that chip colour)
+  const filtEl=document.getElementById('screener-filter');
+  if(filtEl){
+    const dot=col=>`<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${col};margin-right:5px;vertical-align:middle"></span>`;
+    const pills=[
+      {k:'',       label:'All',    d:''},
+      {k:'green',  label:'Green',  d:dot('rgba(63,185,80,0.9)')},
+      {k:'orange', label:'Orange', d:dot('rgba(224,92,42,0.9)')},
+      {k:'yellow', label:'Yellow', d:dot('rgba(240,200,60,1)')},
+    ];
+    const anyHi = Object.values(screenerSymbolColor).some(c=>c);
+    const _pillActive = k => k ? screenerColorFilters.includes(k) : screenerColorFilters.length===0;
+    filtEl.innerHTML = pills.map(p=>`<button onclick="setScreenerFilter('${p.k}')" class="topbar-tag${_pillActive(p.k)?' active':''}" style="cursor:pointer" title="${p.k?('Show the '+p.label.toLowerCase()+'-highlighted list (click several to stack)'):'Show all symbols'}">${p.d}${p.label}</button>`).join('')
+      + `<button onclick="clearScreenerHighlights()" class="topbar-tag" style="cursor:pointer;border-style:dashed${anyHi?'':';opacity:0.45'}" title="Clear all highlighted symbols back to none"${anyHi?'':' disabled'}>✕ Clear</button>`;
   }
-  const dateEl=document.getElementById('screener-date');
-  if(dateEl){ dateEl.max=_scrToday(); if(dateEl.value!==screenerDate) dateEl.value=screenerDate; }
-  const liveBtn=document.getElementById('scr-live');
-  if(liveBtn) liveBtn.classList.toggle('active', !screenerDate);
 }
 function _sparkline(vals, up){
   if(!vals || vals.length<2) return '<span style="color:rgba(255,255,255,0.2);font-size:11px">—</span>';
@@ -4467,34 +4473,113 @@ function _sparkline(vals, up){
   const lastX=w, lastY=(h-1-((vals[vals.length-1]-min)/range)*(h-2)).toFixed(1);
   return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block"><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.5" stroke-linejoin="round"/><circle cx="${lastX}" cy="${lastY}" r="1.8" fill="${col}"/></svg>`;
 }
-function _dirColor(d){ return d>0?'var(--green)':d<0?'var(--red)':'var(--text)'; }
 function _screenerCell(key,v){
+  const up=v.up, g='color:var(--green);font-weight:700', norm='color:var(--text)';
   switch(key){
-    case 'symbol':
-      return `<td><span class="td-ticker" onclick="cycleScreenerHL('${v.sym}')" title="Click to cycle highlight" style="cursor:pointer;padding:1px 7px;border-radius:4px;background:${_scrHLbg(v.sym)};transition:background .15s">${v.sym}</span></td>`;
-    case 'mktcap':
-      return (v.marketCap==null)
-        ? `<td style="font-family:var(--fd);color:rgba(255,255,255,0.3)">—</td>`
-        : `<td style="font-family:var(--fd)">${v.mktCapApprox?'≈':''}${_fmtDollarFull(v.marketCap)}</td>`;
-    case 'voldollar':
-      return `<td style="font-family:var(--fd);font-weight:600;color:${_dirColor(_volDollarDir[v.sym]||0)}">${_fmtDollarFull(v.curVol*v.price)}</td>`;
-    case 'avgdollar':
-      return `<td style="font-family:var(--fd)">${_fmtDollarFull(v.avgDollar20d)}</td>`;
-    case 'price':
-      return `<td style="font-family:var(--fd)">${_fmtPrice(v.price)}</td>`;
-    case 'chg': {
-      if(v.changePct==null) return `<td style="font-family:var(--fd);color:rgba(255,255,255,0.3)">—</td>`;
-      const c=v.changePct>=0?'var(--green)':'var(--red)';
-      const tag=v.phase==='pre'?' <span style="font-size:9px;color:var(--muted);letter-spacing:.03em">PRE</span>'
-               :v.phase==='post'?' <span style="font-size:9px;color:var(--muted);letter-spacing:.03em">AH</span>':'';
-      return `<td style="font-family:var(--fd);font-weight:700;color:${c}" title="${v.phase==='pre'?'Pre-market':v.phase==='post'?'After-hours':'Regular session'} change vs prior close">${v.changePct>=0?'+':''}${v.changePct.toFixed(2)}%${tag}</td>`;
+    case 'symbol': {
+      const c = screenerSymbolColor[v.sym] || '';
+      const bd = c ? `background:${_SYM_BG[c]};padding:2px 7px;border-radius:5px;` : 'padding:2px 7px;';
+      return `<td><span class="td-ticker" onclick="event.stopPropagation();cycleSymbolColor('${v.sym}')" title="Click to cycle highlight: green → orange → yellow → none" style="cursor:pointer;${bd}">${v.sym}</span></td>`;
     }
-    case 'rvol':
-      return `<td style="font-family:var(--fd);font-weight:700;color:${_dirColor(_rvolDir[v.sym]||0)}">${v.rvol?v.rvol.toFixed(2)+'×':'—'}</td>`;
-    case 'volchart':
-      return `<td title="Volume — recent ${TF_LABEL[screenerTF]||screenerTF} bars">${_sparkline(v.volSeries, v.up)}</td>`;
+    case 'chg': {
+      if(!v.prevClose) return `<td style="color:rgba(255,255,255,0.3)">—</td>`;
+      const pct=((v.price-v.prevClose)/v.prevClose)*100;
+      const c=pct>=0?'var(--green)':'var(--red)';
+      return `<td style="font-family:var(--fd);font-weight:700;color:${c}">${pct>=0?'+':''}${pct.toFixed(2)}%</td>`;
+    }
+    case 'avgvol': return `<td style="font-family:var(--fd)">${_fmtBig(v.avgVol)}</td>`;
+    case 'avgdol': return `<td style="font-family:var(--fd)">$${_fmtBig(v.avgVol*v.price)}</td>`;
+    case 'curvol': return `<td style="font-family:var(--fd);${up?g:norm}">${_fmtBig(v.curVol)}</td>`;
+    case 'curvolpct': {
+      if(!v.avgVol) return `<td style="color:rgba(255,255,255,0.3)">—</td>`;
+      const p=((v.curVol-v.avgVol)/v.avgVol)*100;
+      const c=p>=0?'var(--green)':'var(--red)';
+      return `<td style="font-family:var(--fd);font-weight:700;color:${c}" title="Current volume vs average volume">${p>=0?'+':''}${p.toFixed(1)}%</td>`;
+    }
+    case 'curdol': return `<td style="font-family:var(--fd);${up?g:norm}">$${_fmtBig(v.curVol*v.price)}</td>`;
+    case 'curdolpct': {
+      const avgDol=v.avgVol*v.price;
+      if(!avgDol) return `<td style="color:rgba(255,255,255,0.3)">—</td>`;
+      const p=((v.curVol*v.price-avgDol)/avgDol)*100;
+      const c=p>=0?'var(--green)':'var(--red)';
+      return `<td style="font-family:var(--fd);font-weight:700;color:${c}" title="Current vol × price vs average vol × price">${p>=0?'+':''}${p.toFixed(1)}%</td>`;
+    }
+    case 'voltraded': {
+      if(!v.curVol) return `<td style="color:rgba(255,255,255,0.3)">—</td>`;
+      const _vt = v.curVol*v.price;
+      // Prefer "vs the previous day" (immediate + stable); fall back to the sticky tick-to-tick trend.
+      let dir = v.vtTrend, tip;
+      if(v.prevDayDollar!=null && isFinite(v.prevDayDollar) && v.prevDayDollar>0){
+        dir = _vt>v.prevDayDollar ? 'up' : (_vt<v.prevDayDollar ? 'down' : '');
+        tip = `$ traded today (volume × price). Green = higher than the previous trading day's $${_fmtFull(v.prevDayDollar)}, red = lower.`;
+      } else {
+        tip = `Dollar value traded in the latest ${TF_LABEL[screenerTF]||screenerTF} bar (volume × price). Green = higher than the previous load, red = lower.`;
+      }
+      const col = dir==='up'?'var(--green)':dir==='down'?'var(--red)':'var(--text)';
+      return `<td style="font-family:var(--fd);color:${col}${dir?';font-weight:700':''}" title="${tip}">$${_fmtFull(_vt)}</td>`;
+    }
+    case 'mktcap': return `<td style="font-family:var(--fd)" title="${v.mktCapApprox?'Approx market cap as of the selected date (current shares × that day&#39;s close)':'Market capitalisation'}">${v.marketCap?(v.mktCapApprox?'≈$':'$')+_fmtFull(v.marketCap):'—'}</td>`;
+    case 'avg20d': return `<td style="font-family:var(--fd)" title="Average daily $ volume over the last 20 trading days">${v.avgDollar20d?'$'+_fmtFull(v.avgDollar20d):'—'}</td>`;
+    case 'price': return `<td style="font-family:var(--fd)">${v.price?'$'+(v.price>=1?v.price.toFixed(2):v.price.toFixed(4)):'—'}</td>`;
+    case 'extchg': {
+      if(v.changePct==null || !isFinite(v.changePct)) return `<td style="color:rgba(255,255,255,0.3)">—</td>`;
+      const c=v.changePct>=0?'var(--green)':'var(--red)';
+      const tagTxt = v.phase==='pre'?'PRE':v.phase==='post'?'AH':'';
+      const tag = tagTxt?`<span style="font-size:9px;font-weight:700;color:var(--muted);background:rgba(255,255,255,0.08);border-radius:3px;padding:1px 4px;margin-left:5px;letter-spacing:0.04em;vertical-align:middle">${tagTxt}</span>`:'';
+      return `<td style="font-family:var(--fd);font-weight:700;color:${c}" title="Regular-session % change while the market is open; shows pre-market (PRE) or after-hours (AH) change otherwise">${v.changePct>=0?'+':''}${v.changePct.toFixed(2)}%${tag}</td>`;
+    }
+    case 'rvol': {
+      if(!v.rvol) return `<td style="color:rgba(255,255,255,0.3)">—</td>`;
+      const col = v.rvolTrend==='up'?'var(--green)':v.rvolTrend==='down'?'var(--red)':'var(--muted)';
+      return `<td style="font-family:var(--fd);font-weight:700;color:${col}" title="RVOL = current ÷ average volume. Green = higher than the previous timeframe, red = lower.">${v.rvol.toFixed(2)}×</td>`;
+    }
+    case 'volchart': return `<td title="Volume over recent ${TF_LABEL[screenerTF]||screenerTF} bars">${_sparkline(v.volSeries, up)}</td>`;
   }
   return '';
+}
+// Value used to sort a symbol for the active column (null = no data → sinks to bottom)
+function _screenerSortVal(sym, quotes, key){
+  const q = quotes && quotes[sym];
+  if(key==='symbol') return sym;            // alphabetical works even before data loads
+  if(!q || q.error) return null;
+  const price=q.price||0, avgVol=q.avgVol||0, curVol=q.curVol||0;
+  switch(key){
+    case 'chg':    return q.prevClose ? ((price-q.prevClose)/q.prevClose)*100 : null;
+    case 'avgvol': return avgVol;
+    case 'avgdol': return avgVol*price;
+    case 'curvol': return curVol;
+    case 'curvolpct': return avgVol ? ((curVol-avgVol)/avgVol)*100 : null;
+    case 'curdol': return curVol*price;
+    case 'curdolpct': { const ad=avgVol*price; return ad ? ((curVol*price-ad)/ad)*100 : null; }
+    case 'voltraded': return (q.curVol||0)*price;
+    case 'mktcap': return (q.marketCap!=null) ? q.marketCap : null;
+    case 'avg20d': return (q.avgDollar20d!=null) ? q.avgDollar20d : null;
+    case 'price':  return price || null;
+    case 'extchg': return (q.changePct!=null && isFinite(q.changePct)) ? q.changePct : null;
+    case 'rvol':   return avgVol ? curVol/avgVol : null;
+  }
+  return null;
+}
+function _screenerSortedSymbols(quotes){
+  const order = screenerSymbols.slice();   // never mutate the saved list
+  // Clear a saved sort that referenced a column that's no longer shown
+  if(screenerSort.key && !SCREENER_COLS.some(c=>c.key===screenerSort.key && c.key!=='volchart')) screenerSort.key='';
+  if(!screenerSort.key) return order;      // unsorted → keep insertion order
+  const k=screenerSort.key, dir=screenerSort.dir==='asc'?1:-1;
+  return order.sort((a,b)=>{
+    const va=_screenerSortVal(a,quotes,k), vb=_screenerSortVal(b,quotes,k);
+    if(va==null && vb==null) return 0;
+    if(va==null) return 1;                 // rows without data always sink to the bottom
+    if(vb==null) return -1;
+    if(k==='symbol') return dir*String(va).localeCompare(String(vb));
+    return dir*(va-vb);
+  });
+}
+function sortScreener(key){
+  if(screenerSort.key===key){ screenerSort.dir = screenerSort.dir==='asc'?'desc':'asc'; }
+  else { screenerSort.key=key; screenerSort.dir = (key==='symbol')?'asc':'desc'; } // symbol A→Z, numbers high→low first
+  renderScreener(_lastQuotes);
+  scheduleSave();
 }
 function renderScreener(quotes){
   const tbl=document.getElementById('screener-table'), msg=document.getElementById('screener-empty'), thead=document.getElementById('screener-thead'), tb=document.getElementById('screener-tbody');
@@ -4503,95 +4588,256 @@ function renderScreener(quotes){
   if(!screenerSymbols.length){ tbl.style.display='none'; msg.style.display='block'; tb.innerHTML=''; thead.innerHTML=''; return; }
   tbl.style.display='table'; msg.style.display='none';
   const cols = SCREENER_COLS.filter(c=>!screenerHidden[c.key]);
+  // Clickable headers (the volume sparkline column is not sortable)
   thead.innerHTML = '<tr>'+cols.map(c=>{
-    const sortable = c.key!=='volchart';
+    if(c.key==='volchart') return `<th>${c.label}</th>`;
     const active = screenerSort.key===c.key;
-    const arrow = active ? (screenerSort.dir==='asc'?' ▲':' ▼') : (sortable?' <span style="opacity:.25">⇅</span>':'');
-    const style = sortable ? 'cursor:pointer;user-select:none'+(active?';color:var(--accent2)':'') : '';
-    const handler = sortable ? ` onclick="setScreenerSort('${c.key}')" title="Sort by ${c.label}"` : '';
-    return `<th${handler} style="${style}">${c.label}${arrow}</th>`;
+    const arrow = active ? (screenerSort.dir==='asc'?' ▲':' ▼') : '<span style="opacity:0.22;font-size:9px"> ↕</span>';
+    return `<th onclick="sortScreener('${c.key}')" style="cursor:pointer;user-select:none${active?';color:var(--accent2)':''}" title="Click to sort${active?(screenerSort.dir==='asc'?' (low→high — click for high→low)':' (high→low — click for low→high)'):''}">${c.label}${arrow}</th>`;
   }).join('')+'<th></th></tr>';
   const rm = sym=>`<td><button onclick="removeScreenerSymbol('${sym}')" title="Remove" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:13px;cursor:pointer">✕</button></td>`;
-  // Highlight filter: when a color is selected, show only stocks chipped that color.
-  const visibleSymbols = screenerColorFilter
-    ? screenerSymbols.filter(s => screenerHighlights[s] === screenerColorFilter)
-    : screenerSymbols;
-  if(screenerColorFilter && !visibleSymbols.length){
-    tb.innerHTML = `<tr><td colspan="${cols.length+1}" style="font-size:12px;color:var(--muted);text-align:center;padding:20px">No ${screenerColorFilter}-highlighted stocks. Click a ticker to highlight it, or pick a different color.</td></tr>`;
-    return;
-  }
-  // Build a row record per symbol, then sort if a column is active.
-  let rows = visibleSymbols.map(sym=>{
+  // build one table row for a symbol
+  const rowFn = sym=>{
     const q = quotes && quotes[sym];
-    let v = null;
-    if(q && !q.error){
-      const avgVol=q.avgVol||0, curVol=q.curVol||0, price=q.price||0;
-      v={ sym, avgVol, curVol, price, prevClose:q.prevClose||0,
-          marketCap:(q.marketCap!=null?q.marketCap:null), mktCapApprox:!!q.mktCapApprox,
-          avgDollar20d:(q.avgDollar20d!=null?q.avgDollar20d:null),
-          changePct:(q.changePct!=null?q.changePct:null), phase:(q.phase||'regular'),
-          volSeries:q.volSeries||[], rvol: avgVol?curVol/avgVol:0, up: curVol>avgVol };
-    }
-    return { sym, q, v };
-  });
-  if(screenerSort.key && !SCREENER_SORTABLE.has(screenerSort.key)) screenerSort.key=null; // drop stale/removed keys
-  if(screenerSort.key){
-    const k=screenerSort.key, dir=(screenerSort.dir==='asc'?1:-1);
-    rows.sort((a,b)=>{
-      const av=_screenerSortVal(k,a.v), bv=_screenerSortVal(k,b.v);
-      const aNull=(av==null), bNull=(bv==null);
-      if(aNull && bNull) return 0;
-      if(aNull) return 1;   // rows without data always sink to the bottom
-      if(bNull) return -1;
-      if(typeof av==='string') return dir * av.localeCompare(bv);
-      return dir * (av - bv);
-    });
-  }
-  tb.innerHTML = rows.map(({sym,q,v})=>{
     if(!q) return `<tr><td colspan="${cols.length}" style="font-size:12px;color:var(--muted)"><span class="td-ticker">${sym}</span> · loading…</td>${rm(sym)}</tr>`;
     if(q.error) return `<tr><td colspan="${cols.length}" style="font-size:12px"><span class="td-ticker">${sym}</span> · <span style="color:var(--red)">${q.error}</span></td>${rm(sym)}</tr>`;
+    const avgVol=q.avgVol||0, curVol=q.curVol||0, price=q.price||0;
+    const _tr=_screenerTrend[sym]||{};
+    const v={ sym, avgVol, curVol, price, dayVol:q.dayVol||0, marketCap:q.marketCap, mktCapApprox:q.mktCapApprox, avgDollar20d:q.avgDollar20d, prevDayDollar:(q.prevDayDollar!=null?q.prevDayDollar:null), prevClose:q.prevClose||0, volSeries:q.volSeries||[], rvol: avgVol?curVol/avgVol:0, up: curVol>avgVol, vtTrend:_tr.vt||'', rvolTrend:_tr.rvol||'', changePct:(q.changePct!=null?q.changePct:null), phase:q.phase||'regular' };
     return '<tr>'+cols.map(c=>_screenerCell(c.key,v)).join('')+rm(sym)+'</tr>';
-  }).join('');
+  };
+  let order = _screenerSortedSymbols(quotes);
+  if(screenerSearch){ order = order.filter(s=>s.includes(screenerSearch)); }
+  // Multi-select colour filter: show each selected colour as its own stacked group (green → orange → yellow)
+  if(screenerColorFilters.length){
+    const COLOR_ORDER=['green','orange','yellow'];
+    const META={green:{c:'rgba(63,185,80,0.9)',l:'Green'},orange:{c:'rgba(224,92,42,0.9)',l:'Orange'},yellow:{c:'rgba(240,200,60,1)',l:'Yellow'}};
+    const groups = COLOR_ORDER.filter(col=>screenerColorFilters.includes(col)).map(col=>({col, syms:order.filter(s=>(screenerSymbolColor[s]||'')===col)}));
+    const total = groups.reduce((a,g)=>a+g.syms.length,0);
+    if(!total){
+      tb.innerHTML = `<tr><td colspan="${cols.length+1}" style="text-align:center;padding:26px 12px;color:var(--muted);font-size:12px">No symbols highlighted in the selected ${groups.length>1?'colours':'colour'}${screenerSearch?` matching "<strong style="color:var(--text)">${screenerSearch}</strong>"`:''} — click a ticker in the Symbol column to highlight it.</td></tr>`;
+      return;
+    }
+    tb.innerHTML = groups.map(g=>{ const m=META[g.col];
+      const hdr=`<tr><td colspan="${cols.length+1}" style="padding:12px 8px 6px;font-size:11px;font-family:var(--fd);color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;border-bottom:0.5px solid var(--border2)"><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${m.c};margin-right:7px;vertical-align:middle"></span>${m.l} <span style="color:rgba(255,255,255,0.35)">(${g.syms.length})</span></td></tr>`;
+      const body = g.syms.length ? g.syms.map(rowFn).join('') : `<tr><td colspan="${cols.length+1}" style="padding:8px;color:rgba(255,255,255,0.3);font-size:11px;text-align:center">— none yet —</td></tr>`;
+      return hdr+body;
+    }).join('');
+    return;
+  }
+  // "All" — ungrouped
+  if(!order.length){
+    tb.innerHTML = `<tr><td colspan="${cols.length+1}" style="text-align:center;padding:26px 12px;color:var(--muted);font-size:12px">No symbols matching "<strong style="color:var(--text)">${screenerSearch}</strong>" — try a different search.</td></tr>`;
+    return;
+  }
+  tb.innerHTML = order.map(rowFn).join('');
 }
 let _screenerLoading=false;
 async function loadScreener(force){
   const status=document.getElementById('screener-status');
-  renderScreenerControls();
   if(!screenerSymbols.length){ renderScreener(); if(status)status.textContent=''; return; }
   if(_screenerLoading && !force) return;
   _screenerLoading=true;
   renderScreener(_lastQuotes); // keep showing last data while refreshing
-  if(status) status.textContent = screenerDate
-    ? ('Loading daily snapshot for '+screenerDate+'…')
-    : ('Fetching live data ('+(TF_LABEL[screenerTF]||screenerTF)+')…');
-  // Snapshot the previous load's metrics so we can color Vol Traded ($) / RVOL green↑ / red↓.
-  const prevVD={}, prevRV={};
-  Object.keys(_lastQuotes).forEach(s=>{ const q=_lastQuotes[s]; if(q&&!q.error){ prevVD[s]=(q.curVol||0)*(q.price||0); prevRV[s]=(q.avgVol?(q.curVol||0)/q.avgVol:0); } });
-  const dateParam = screenerDate ? ('&date='+encodeURIComponent(screenerDate)) : '';
+  const dq = screenerDate ? '&date='+encodeURIComponent(screenerDate) : '';
+  if(status) status.textContent = screenerDate ? ('Loading snapshot as of '+screenerDate+'…') : ('Fetching live data ('+(TF_LABEL[screenerTF]||screenerTF)+')…');
   const quotes={};
   await Promise.all(screenerSymbols.map(async sym=>{
-    try{ const r=await fetch('/api/quote?symbol='+encodeURIComponent(sym)+'&tf='+encodeURIComponent(screenerTF)+dateParam); quotes[sym]=await r.json(); }
+    try{ const r=await fetch('/api/quote?symbol='+encodeURIComponent(sym)+'&tf='+encodeURIComponent(screenerTF)+dq); quotes[sym]=await r.json(); }
     catch(e){ quotes[sym]={symbol:sym,error:'offline'}; }
   }));
-  // Direction vs previous load (neutral on first sight / no change).
-  screenerSymbols.forEach(sym=>{
-    const q=quotes[sym]; if(!q||q.error) return;
-    const vd=(q.curVol||0)*(q.price||0), rv=(q.avgVol?(q.curVol||0)/q.avgVol:0);
-    _volDollarDir[sym]=(prevVD[sym]==null)?0:(vd>prevVD[sym]?1:vd<prevVD[sym]?-1:0);
-    _rvolDir[sym]=(prevRV[sym]==null)?0:(rv>prevRV[sym]?1:rv<prevRV[sym]?-1:0);
-  });
   _lastQuotes=quotes;
+  // Compute up/down trend for Vol Traded ($) and RVOL vs the previous load.
+  // STICKY: on a no-change tick we KEEP the last direction, so a cell stays green until it actually
+  // drops (then red) and stays red until it rises again — instead of resetting to neutral.
+  const _dir=(nv,pv,prevDir)=> (pv==null||!isFinite(pv)) ? '' : (nv>pv ? 'up' : (nv<pv ? 'down' : (prevDir||'')));
+  const newTrend={};
+  screenerSymbols.forEach(sym=>{
+    const q=quotes[sym];
+    if(!q || q.error){ newTrend[sym]={vt:'',rvol:''}; return; }
+    const price=q.price||0, curVol=q.curVol||0, avgVol=q.avgVol||0;
+    const vt=curVol*price, rv=avgVol?curVol/avgVol:0;
+    const prev=_screenerPrevVals[sym], prevTr=_screenerTrend[sym]||{};
+    newTrend[sym]={ vt:_dir(vt, prev&&prev.vt, prevTr.vt), rvol:_dir(rv, prev&&prev.rvol, prevTr.rvol) };
+    _screenerPrevVals[sym]={vt, rvol:rv};
+  });
+  _screenerTrend=newTrend;
   renderScreener(quotes);
   if(status){
     if(screenerDate){
-      let asOf=screenerDate;
-      for(const s of screenerSymbols){ const q=quotes[s]; if(q&&q.asOf){ asOf=q.asOf; break; } }
-      status.textContent='Daily snapshot · as of '+asOf+' (close of day)';
+      const asOf = (Object.values(quotes).find(q=>q && q.asOf)||{}).asOf || screenerDate;
+      status.textContent = 'Daily snapshot · as of '+asOf+' (close of day)';
     } else {
-      status.textContent=(TF_LABEL[screenerTF]||screenerTF)+' · updated '+new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      status.textContent = (TF_LABEL[screenerTF]||screenerTF)+' · updated '+new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     }
   }
   _screenerLoading=false;
+  // only refresh the sub-tab that's currently visible
+  if(screenerTab==='scan' && typeof renderScanSection==='function') renderScanSection();
+  if(screenerTab==='matrix' && typeof renderMatrixSection==='function') renderMatrixSection();
+}
+// Stock Screener sub-tabs: 'main' (table) · 'scan' (uptrend scan) · 'matrix' (play matrix)
+let screenerTab='main';
+function switchScreenerTab(key){
+  screenerTab=key;
+  ['main','scan','matrix'].forEach(k=>{ const t=document.getElementById('sctab-'+k), p=document.getElementById('sc-tab-'+k);
+    if(t) t.classList.toggle('active', k===key); if(p) p.style.display=(k===key)?'':'none'; });
+  if(key==='scan' && typeof renderScanSection==='function') renderScanSection();
+  if(key==='matrix' && typeof renderMatrixSection==='function') renderMatrixSection();
+  if(typeof scheduleSave==='function') scheduleSave();
+}
+let matrixSort='rv';   // sort names within each matrix cell, high→low: 'rv' (RVOL) | 'ch' (% Chg)
+function setMatrixSort(k){ matrixSort=k; if(typeof renderMatrixSection==='function') renderMatrixSection(); if(typeof scheduleSave==='function') scheduleSave(); }
+// ── Play-Quality Matrix: classify each symbol A–F by RVOL (≥1.5×) and % change ──
+function renderMatrixSection(){
+  const el=document.getElementById('matrix-section'); if(!el) return;
+  if(!screenerSymbols.length){ el.innerHTML=''; return; }
+  const groups={A:[],B:[],C:[],D:[],E:[],F:[]};
+  const cls=(rv,ch)=>{ const conf=rv>=1.5; const row=ch>=0.5?0:(ch>=0?1:2); return [['A','B'],['C','D'],['E','F']][row][conf?0:1]; };
+  screenerSymbols.forEach(sym=>{ const q=(_lastQuotes||{})[sym]; if(!q||q.error||q.changePct==null) return;
+    const rv=q.avgVol?((q.curVol||0)/q.avgVol):0; groups[cls(rv,q.changePct)].push({sym, rv, ch:q.changePct}); });
+  const C={
+    A:{d:'momentum confirmed · best long', bg:'rgba(76,175,133,0.13)', bd:'#4caf85', tc:'var(--green)'},
+    B:{d:'weak rally, no fuel · suspect / late', bg:'var(--surface2)', bd:'var(--border2)', tc:'var(--muted)'},
+    C:{d:'coiling / accumulation · pre-breakout watch', bg:'rgba(224,165,60,0.13)', bd:'#e0a53c', tc:'#d6921f'},
+    D:{d:'quiet drift · neutral / skip', bg:'var(--surface2)', bd:'var(--border2)', tc:'var(--muted)'},
+    E:{d:'distribution / selling · avoid long · short cand.', bg:'rgba(229,115,104,0.13)', bd:'#e57368', tc:'var(--red)'},
+    F:{d:'no-interest drift down · possible base', bg:'var(--surface2)', bd:'var(--border2)', tc:'var(--muted)'}
+  };
+  const cell=k=>{ const c=C[k], list=groups[k].slice().sort((a,b)=> matrixSort==='ch'?(b.ch-a.ch):(b.rv-a.rv));
+    const tags=list.map(x=>`<span style="display:inline-block;font-family:var(--fd);font-size:10.5px;font-weight:700;background:rgba(255,255,255,0.06);border-radius:3px;padding:1px 5px;margin:3px 3px 0 0">${x.sym} <span style="color:var(--muted);font-weight:400">${x.ch>=0?'+':''}${x.ch.toFixed(1)}%·${x.rv.toFixed(1)}x</span></span>`).join('');
+    return `<div style="background:${c.bg};border:1px solid ${c.bd};border-radius:11px;padding:12px 14px;min-height:118px">
+      <div style="display:flex;align-items:baseline;gap:8px"><span style="font-family:var(--fd);font-size:17px;font-weight:800;color:${c.tc}">${k}</span><span style="font-size:10px;color:var(--muted);font-family:var(--fd)">${list.length} <span data-no-i18n>${list.length===1?'name':'names'}</span></span></div>
+      <div style="font-size:11px;color:${c.tc};margin-top:3px;opacity:0.9">${c.d}</div>
+      <div style="margin-top:8px;line-height:1.5">${tags||'<span style="color:var(--muted);font-size:10px">—</span>'}</div></div>`; };
+  const colHead=(t,s)=>`<div style="text-align:center;padding-bottom:4px"><div style="font-family:var(--fd);font-size:12.5px;font-weight:700;color:var(--text)">${t}</div><div style="font-size:10px;color:var(--muted)">${s}</div></div>`;
+  const rowLab=(t,s)=>`<div style="display:flex;flex-direction:column;justify-content:center;padding-left:6px"><div style="font-family:var(--fd);font-size:12px;font-weight:700;color:var(--text)">${t}</div><div style="font-size:10px;color:var(--muted)">${s}</div></div>`;
+  const mtfBtns=Object.keys(TF_LABEL).map(k=>`<button onclick="setScreenerTF('${k}')" class="topbar-tag${screenerTF===k?' active':''}" style="cursor:pointer">${TF_LABEL[k]}</button>`).join('');
+  el.innerHTML=`<div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div><div style="font-family:var(--fd);font-size:13px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--text)">Play-Quality Matrix <span style="color:var(--accent2);font-size:11px">· ${TF_LABEL[screenerTF]||screenerTF}</span></div>
+      <div style="font-size:11px;color:var(--muted);margin:2px 0 0">Each symbol bucketed by volume confirmation (RVOL) × price move — A is the highest-quality long, E flags distribution.</div></div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
+        <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap"><span style="font-size:10px;color:var(--muted);font-family:var(--fd);letter-spacing:0.07em;margin-right:2px">PERIOD</span>${mtfBtns}</div>
+        <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap"><span style="font-size:10px;color:var(--muted);font-family:var(--fd);letter-spacing:0.07em;margin-right:2px">SORT BY</span><button onclick="setMatrixSort('rv')" class="topbar-tag${matrixSort==='rv'?' active':''}" style="cursor:pointer">RVOL</button><button onclick="setMatrixSort('ch')" class="topbar-tag${matrixSort==='ch'?' active':''}" style="cursor:pointer">% Chg</button></div>
+      </div></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 130px;gap:10px;align-items:stretch;margin-top:14px">
+      ${colHead('Rvol ≥ 1.5×','vol confirms')}${colHead('Rvol < 1.5×','no confirmation')}<div></div>
+      ${cell('A')}${cell('B')}${rowLab('P ≥ 0.5%','price up')}
+      ${cell('C')}${cell('D')}${rowLab('0 – 0.5%','price flat')}
+      ${cell('E')}${cell('F')}${rowLab('P < 0%','price down')}
+    </div>`;
+}
+// ── In-Play Uptrend Scan (bottom section) — ranks symbols by a 0–100 score ──
+let _scanData=[], _scanLoading=false, _scanTs=0, scanTF='1d', scanBench='QQQ';
+const SCAN_BENCHES=['QQQ','SPY','SMH'];
+let _scanSort={key:'score',dir:'desc'};
+function setScanTF(tf){ scanTF=tf; _scanData=[]; _scanTs=0; if(typeof scheduleSave==='function') scheduleSave(); renderScanSection(true); }
+function setScanBench(b){ scanBench=b; _scanData=[]; _scanTs=0; if(typeof scheduleSave==='function') scheduleSave(); renderScanSection(true); }
+function sortScan(key){ if(_scanSort.key===key){ _scanSort.dir = _scanSort.dir==='asc'?'desc':'asc'; } else { _scanSort.key=key; _scanSort.dir = (key==='symbol')?'asc':'desc'; } _renderScanTable(); if(typeof scheduleSave==='function') scheduleSave(); }
+async function renderScanSection(force){
+  const el=document.getElementById('scan-section'); if(!el) return;
+  if(!screenerSymbols.length){ el.innerHTML=''; _scanData=[]; return; }
+  if(!_scanData.length) _renderScanTable(true);   // show heading + "loading"
+  if(_scanLoading) return;
+  if(!force && _scanData.length && Date.now()-_scanTs<50000){ _renderScanTable(); return; }   // throttle; server also caches 60s
+  _scanLoading=true;
+  try{
+    const r=await fetch('/api/scan?symbols='+encodeURIComponent(screenerSymbols.join(','))+'&tf='+encodeURIComponent(scanTF)+'&bench='+encodeURIComponent(scanBench)+'&_cb='+Date.now(),{cache:'no-store'});
+    const j=await r.json();
+    _scanData=(j.rows||[]).filter(x=>x && !x.error);
+    _scanTs=Date.now();
+  }catch(e){}
+  _scanLoading=false;
+  _renderScanTable();
+}
+function _renderScanTable(loading){
+  const el=document.getElementById('scan-section'); if(!el) return;
+  const when=_scanTs?('updated '+new Date(_scanTs).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})):'';
+  const tfBtns=Object.keys(TF_LABEL).map(k=>`<button onclick="setScanTF('${k}')" class="topbar-tag${scanTF===k?' active':''}" style="cursor:pointer">${TF_LABEL[k]}</button>`).join('');
+  const benchBtns=SCAN_BENCHES.map(b=>`<button onclick="setScanBench('${b}')" class="topbar-tag${scanBench===b?' active':''}" style="cursor:pointer" title="${b==='QQQ'?'Nasdaq-100 (tech)':b==='SMH'?'Semiconductor ETF':'S&P 500 (broad market)'}">${b}</button>`).join('');
+  const head=`<div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px">
+    <div><div style="font-family:var(--fd);font-size:13px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--text)">In-Play Uptrend Scan <span style="color:var(--accent2);font-size:11px">· ${TF_LABEL[scanTF]||scanTF}</span></div>
+    <div style="font-size:11px;color:var(--muted);margin-top:2px">Ranked 0–100 over the chosen period: RVOL + momentum + MA-stack + ADX + high proximity · RS vs ${scanBench} · ${when}</div></div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
+      <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap"><span style="font-size:10px;color:var(--muted);font-family:var(--fd);letter-spacing:0.07em;margin-right:2px">PERIOD</span>${tfBtns}<button onclick="renderScanSection(true)" class="topbar-tag" style="cursor:pointer;margin-left:4px" title="Recompute the scan now"><span data-no-i18n>↻</span></button></div>
+      <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap"><span style="font-size:10px;color:var(--muted);font-family:var(--fd);letter-spacing:0.07em;margin-right:2px">RS BENCH</span>${benchBtns}</div>
+      <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap"><span style="font-size:10px;color:var(--muted);font-family:var(--fd);letter-spacing:0.07em;margin-right:2px">HIGHLIGHT</span>${_highlightPillsHTML()}</div>
+    </div></div>`;
+  if(loading && !_scanData.length){ el.innerHTML=head+'<div style="color:var(--muted);font-size:12px;font-family:var(--fd);padding:12px 2px">Computing trend &amp; relative-strength from 1-year daily bars…</div>'; return; }
+  const _sdir=_scanSort.dir==='asc'?1:-1;
+  let rows=_scanData.slice().sort((a,b)=>{
+    if(_scanSort.key==='symbol') return _sdir*String(a.symbol||'').localeCompare(String(b.symbol||''));
+    const va=a[_scanSort.key], vb=b[_scanSort.key];
+    const na=(va==null||isNaN(va))?-Infinity:va, nb=(vb==null||isNaN(vb))?-Infinity:vb;
+    return _sdir*(na-nb);
+  });
+  if(screenerColorFilters.length){ rows=rows.filter(r=>screenerColorFilters.includes(screenerSymbolColor[r.symbol]||'')); }   // highlight filter
+  if(!rows.length){ el.innerHTML=head+`<div style="color:var(--muted);font-size:12px;font-family:var(--fd);padding:12px 2px">${screenerColorFilters.length?'No symbols highlighted in the selected colour(s).':'No scan data for these symbols.'}</div>`; return; }
+  const _sth=(key,label,title)=>{ const a=_scanSort.key===key; const ar=a?(_scanSort.dir==='asc'?' ▲':' ▼'):'<span style="opacity:0.22;font-size:9px"> ↕</span>'; return `<th onclick="sortScan('${key}')" style="padding:5px 10px;cursor:pointer;user-select:none${a?';color:var(--accent2)':''}"${title?` title="${title}"`:''}>${label}${ar}</th>`; };
+  const fp=v=>v==null?'—':(v>=0?'+':'')+v.toFixed(2)+'%';
+  const stack=ms=>{ const c=ms>=4?'var(--green)':ms>=2?'var(--accent2)':'var(--muted)'; return `<span style="font-family:var(--fd);font-size:11px;font-weight:700;color:${c}">${ms}/4</span>`; };
+  const body=rows.map((r,i)=>{
+    const sc=r.score||0, scCol=sc>=70?'var(--green)':sc>=45?'var(--accent2)':'var(--muted)';
+    const bar=`<span style="display:inline-block;width:60px;height:7px;background:rgba(255,255,255,0.09);border-radius:4px;vertical-align:middle;margin-right:7px;overflow:hidden"><span style="display:block;height:100%;width:${Math.max(2,Math.min(100,sc))}%;background:${scCol}"></span></span>`;
+    const adxStr=r.adx==null?'—':(r.adx.toFixed(0)+(r.plusDI>r.minusDI?' ▲':' ▼'));
+    const adxCol=(r.adx!=null&&r.adx>=25&&r.plusDI>r.minusDI)?'var(--green)':'var(--muted)';
+    const rsCol=(r.rs||0)>=0?'var(--green)':'var(--red)';
+    const chgCol=(r.changePct||0)>=0?'var(--green)':'var(--red)';
+    const tag=r.phase==='pre'?'PRE':r.phase==='post'?'AH':'';
+    const _hl=screenerSymbolColor[r.symbol]||'';
+    const rowBg=_hl?`background:${_SYM_BG[_hl]}`:(sc>=70?'background:rgba(76,175,133,0.06)':'');
+    return `<tr style="border-top:0.5px solid var(--border2);${rowBg}">
+      <td style="padding:6px 10px;color:var(--muted);font-family:var(--fd)">${i+1}</td>
+      <td style="padding:6px 10px"><span class="td-ticker" onclick="cycleSymbolColor('${r.symbol}')" title="Click to cycle highlight: green → orange → yellow → none" style="cursor:pointer">${r.symbol}</span></td>
+      <td style="padding:6px 10px;font-family:var(--fd);white-space:nowrap">${bar}<strong style="color:${scCol}">${sc}</strong></td>
+      <td style="padding:6px 10px">${stack(r.maStack||0)}</td>
+      <td style="padding:6px 10px;font-family:var(--fd);color:${adxCol};white-space:nowrap">${adxStr}</td>
+      <td style="padding:6px 10px;font-family:var(--fd);color:${rsCol}">${fp(r.rs)}</td>
+      <td style="padding:6px 10px;font-family:var(--fd);color:var(--muted)">${r.pctFrom52==null?'—':r.pctFrom52.toFixed(1)+'%'}</td>
+      <td style="padding:6px 10px;font-family:var(--fd)">${r.rvol?r.rvol.toFixed(2)+'×':'—'}</td>
+      <td style="padding:6px 10px;font-family:var(--fd);color:${chgCol};white-space:nowrap">${fp(r.changePct)}${tag?` <span data-no-i18n style="font-size:9px;font-weight:700;color:var(--muted);background:rgba(255,255,255,0.08);border-radius:3px;padding:1px 4px">${tag}</span>`:''}</td>
+      <td style="padding:6px 10px;font-family:var(--fd);color:var(--muted);white-space:nowrap">${(r.dollarVol)?'$'+_fmtBig(r.dollarVol):'—'}</td>
+      <td style="padding:6px 10px;font-family:var(--fd);color:var(--muted);white-space:nowrap">${(r.avgDollar20d)?'$'+_fmtBig(r.avgDollar20d):'—'}</td>
+      <td style="padding:6px 10px;font-family:var(--fd);color:var(--muted);white-space:nowrap">${(r.marketCap)?'$'+_fmtBig(r.marketCap):'—'}</td>
+      <td style="padding:6px 4px"><button onclick="removeScreenerSymbol('${r.symbol}')" title="Remove symbol" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:13px;cursor:pointer">✕</button></td>
+    </tr>`;
+  }).join('');
+  el.innerHTML=head+`<div style="overflow-x:auto"><table class="log-table" style="width:100%;min-width:1040px;margin-top:12px" data-no-i18n>
+    <thead><tr>
+      <th style="padding:5px 10px">#</th>
+      ${_sth('symbol','Symbol')}
+      ${_sth('score','Score')}
+      ${_sth('maStack','Trend','Price &gt; EMA8 &gt; EMA21 &gt; SMA50 &gt; SMA100 — count of stacked conditions')}
+      ${_sth('adx','ADX','ADX(14): ≥25 = trending. ▲ = +DI &gt; −DI (up)')}
+      ${_sth('rs','RS <span style="color:var(--muted);font-weight:400;font-size:9px">vs '+scanBench+'</span>','Relative strength vs '+scanBench+' over the chosen period')}
+      ${_sth('pctFrom52','vs High','Distance below the period high (0% = at highs)')}
+      ${_sth('rvol','RVOL')}
+      ${_sth('changePct','% Chg')}
+      ${_sth('dollarVol','Vol Traded $','Dollar volume traded today (volume × price)')}
+      ${_sth('avgDollar20d','Avg D Vol $','Average daily $ volume over the last 20 days')}
+      ${_sth('marketCap','Mkt Cap','Market capitalization')}
+      <th></th>
+    </tr></thead><tbody>${body}</tbody></table></div>`+_scanLegend();
+}
+// Collapsible EN + TH explainer for the scan columns
+function _scanLegend(){
+  const it=(name,en,th)=>`<div><strong style="color:var(--text);font-family:var(--fd)">${name}</strong> — ${en}<br><span style="opacity:0.8">${th}</span></div>`;
+  return `<details style="margin-top:14px;font-size:11.5px" data-no-i18n>
+    <summary style="cursor:pointer;color:var(--accent2);font-family:var(--fd);font-size:11px;letter-spacing:0.04em;user-select:none">ⓘ What do these columns mean? · คอลัมน์เหล่านี้หมายถึงอะไร</summary>
+    <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:9px 22px;color:var(--muted);line-height:1.55">
+      ${it('Score','Overall 0–100 grade combining every column. 70+ = strong long.','คะแนนรวม 0–100 จากทุกคอลัมน์ · 70+ = น่าเล่นฝั่งซื้อ')}
+      ${it('Trend','MA-stack 0–4: Price&gt;EMA8&gt;EMA21&gt;SMA50&gt;SMA100. 4/4 = clean uptrend.','การเรียงเส้นค่าเฉลี่ย 0–4 · 4/4 = ขาขึ้นสวย')}
+      ${it('ADX','Trend strength (ADX 14). ≥25 ▲ = strong uptrend; ▼ = down.','ความแข็งแรงของเทรนด์ · ≥25 ▲ = ขาขึ้นแข็งแรง, ▼ = ลง')}
+      ${it('RS','Relative strength vs the chosen benchmark ('+scanBench+'). Green = beating it.','ความแข็งแกร่งเทียบดัชนีที่เลือก ('+scanBench+') · เขียว = ชนะ')}
+      ${it('vs High','Distance below the period high. 0% = right at the highs.','ระยะห่างจากจุดสูงสุด · 0% = อยู่ที่จุดสูงสุดพอดี')}
+      ${it('RVOL','Relative volume vs its average. ≥1.5× = in play (real interest).','วอลุ่มสัมพัทธ์ · ≥1.5 เท่า = มีคนเล่น (สนใจจริง)')}
+      ${it('% Chg','Price move over the chosen period (PRE/AH aware on Daily).','% เปลี่ยนแปลงในช่วงที่เลือก (Daily รวมนอกเวลาทำการ)')}
+      ${it('Vol Traded $','Dollar volume traded today (volume × price). Liquidity.','มูลค่าซื้อขายวันนี้ (วอลุ่ม × ราคา) · สภาพคล่อง')}
+      ${it('Avg D Vol $','Average daily $ volume over the last 20 days. Typical liquidity.','มูลค่าซื้อขายเฉลี่ยต่อวัน 20 วัน · สภาพคล่องปกติ')}
+      ${it('Mkt Cap','Market capitalization (company size).','มูลค่าตลาด (ขนาดบริษัท)')}
+    </div>
+    <div style="margin-top:10px;color:var(--muted);opacity:0.9">Ideal setup: high Score · Trend 4/4 · ADX ≥25 ▲ · RS positive · near High · RVOL ≥1.5×.<br><span style="opacity:0.85">หุ้นในอุดมคติ: คะแนนสูง · Trend 4/4 · ADX ≥25 ▲ · RS บวก · ใกล้จุดสูงสุด · RVOL ≥1.5 เท่า</span></div>
+  </details>`;
 }
 
 
@@ -6229,11 +6475,16 @@ function collectData() {
     customMissedReasons: customMissedReasons,
     screenerSymbols: screenerSymbols,
     screenerTF: screenerTF,
+    scanTF: (typeof scanTF!=='undefined' ? scanTF : '1d'),
+    scanBench: (typeof scanBench!=='undefined' ? scanBench : 'QQQ'),
+    screenerTab: (typeof screenerTab!=='undefined' ? screenerTab : 'main'),
+    scanSort: (typeof _scanSort!=='undefined' ? _scanSort : null),
+    matrixSort: (typeof matrixSort!=='undefined' ? matrixSort : 'rv'),
     screenerHidden: screenerHidden,
     screenerSort: screenerSort,
     screenerDate: screenerDate,
-    screenerHighlights: screenerHighlights,
-    screenerColorFilter: screenerColorFilter,
+    screenerSymbolColor: screenerSymbolColor,
+    screenerColorFilters: screenerColorFilters,
     uiZoomed: uiZoomed,
     rcRoutineRows: RC_ROUTINE_ROWS,
     rcMgmtRows: RC_MGMT_ROWS,
@@ -6385,11 +6636,17 @@ async function loadSavedData() {
     // Restore Stock Screener symbols + preferences
     if (Array.isArray(d.screenerSymbols) && d.screenerSymbols.length) { screenerSymbols.push(...d.screenerSymbols); }
     if (d.screenerTF) screenerTF = d.screenerTF;
+    if (d.scanTF) scanTF = d.scanTF;
+    if (d.scanBench && ['QQQ','SPY','SMH'].includes(d.scanBench)) scanBench = d.scanBench;
+    if (d.screenerTab && ['main','scan','matrix'].includes(d.screenerTab)) screenerTab = d.screenerTab;
+    if (d.scanSort && d.scanSort.key) _scanSort = d.scanSort;
+    if (d.matrixSort && ['rv','ch'].includes(d.matrixSort)) matrixSort = d.matrixSort;
     if (d.screenerHidden && typeof d.screenerHidden === 'object') Object.assign(screenerHidden, d.screenerHidden);
     if (d.screenerSort && typeof d.screenerSort === 'object') Object.assign(screenerSort, d.screenerSort);
     if (typeof d.screenerDate === 'string') screenerDate = d.screenerDate;
-    if (d.screenerHighlights && typeof d.screenerHighlights === 'object') Object.assign(screenerHighlights, d.screenerHighlights);
-    if (typeof d.screenerColorFilter === 'string') screenerColorFilter = d.screenerColorFilter;
+    if (d.screenerSymbolColor && typeof d.screenerSymbolColor === 'object') Object.assign(screenerSymbolColor, d.screenerSymbolColor);
+    if (Array.isArray(d.screenerColorFilters)) screenerColorFilters = d.screenerColorFilters.filter(c=>['green','orange','yellow'].includes(c));
+    else if (typeof d.screenerColorFilter === 'string' && d.screenerColorFilter) screenerColorFilters = [d.screenerColorFilter];   // migrate old single value
     if (typeof d.uiZoomed === 'boolean') { uiZoomed = d.uiZoomed; applyZoom(); }
     // Restore Trades of the Day
     if (d.todTrades && d.todTrades.length) {
@@ -6637,13 +6894,7 @@ loadSavedData();
 setInterval(function(){ try { updateDailyStopBanner(); } catch(e){} }, 300000);
 // Bottom-left session panel — refresh each minute so the current-session highlight tracks BKK time
 setInterval(function(){ try { renderSessionPanel(); } catch(e){} }, 60000);
-// Stock Screener — auto-refresh live volume/price every 45s while the tab is open
-setInterval(function(){
-  try {
-    const p = document.getElementById('page-screener');
-    if (p && p.classList.contains('active') && typeof screenerSymbols !== 'undefined' && screenerSymbols.length && !screenerDate) loadScreener(true);
-  } catch(e){}
-}, 45000);
+// (Stock Screener auto-refresh is handled by startScreenerAuto(), started when the Screener tab opens.)
 </script>
 </body>
 </html>
