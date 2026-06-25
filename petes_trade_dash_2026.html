@@ -498,12 +498,6 @@ input[type=file]{display:none}
         <div class="chart-title">Break-Even Trades <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Trade Journal)</span></div>
         <div id="breakeven-content"></div>
       </div>
-      <div class="chart-card" id="entry-times-card" style="margin-top:14px">
-        <div class="chart-title">Best Entry Times — Last 30 Days <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(BKK time · Trade Journal + Trades of the Day)</span></div>
-        <div id="entry-times-summary" style="margin-bottom:14px"></div>
-        <canvas id="entry-times-chart" height="120"></canvas>
-        <div id="entry-times-breakdown" style="margin-top:14px"></div>
-      </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px">
         <div class="chart-card">
           <div class="chart-title">Trade Journal — Wins by Session (BKK)</div>
@@ -1849,81 +1843,6 @@ function renderPerformance(){
       </div>`;
     }).join('');
   }
-  if (typeof renderEntryTimes === 'function') renderEntryTimes();
-}
-
-// Best/worst ENTRY TIMES over the last 30 days, from Trade Journal + Trades of the Day (BKK time)
-let entryChart = null;
-function renderEntryTimes(){
-  const summary=document.getElementById('entry-times-summary');
-  const canvas=document.getElementById('entry-times-chart');
-  const bd=document.getElementById('entry-times-breakdown');
-  if(!summary||!canvas||!bd) return;
-  // last 30 days by trading date
-  const today = (typeof drToday==='function') ? drToday() : new Date().toISOString().split('T')[0];
-  const cutoff = new Date(today+'T12:00:00'); cutoff.setDate(cutoff.getDate()-30);
-  const cutoffISO = cutoff.toISOString().split('T')[0];
-  const allT=[...trades, ...(typeof todTrades!=='undefined'?todTrades:[])];
-  const rel = allT.filter(t => t.date && t.date>=cutoffISO && /^\d{2}:\d{2}$/.test(t.entryTime||'') && (t.wl==='W'||t.wl==='L'));
-  if(!rel.length){
-    if(entryChart){entryChart.destroy();entryChart=null;}
-    canvas.style.display='none';
-    summary.innerHTML='';
-    bd.innerHTML='<div style="text-align:center;padding:24px;color:rgba(255,255,255,0.18);font-size:13px">No timed win/loss trades in the last 30 days yet. Log entry times and W/L to see your best entry windows.</div>';
-    return;
-  }
-  // 30-minute buckets
-  const SIZE=30, buckets={};
-  rel.forEach(t=>{
-    const m=t.entryTime.split(':'); const mins=(+m[0])*60+(+m[1]);
-    const start=Math.floor(mins/SIZE)*SIZE;
-    if(!buckets[start]) buckets[start]={start, win:0, loss:0};
-    if(t.wl==='W') buckets[start].win++; else buckets[start].loss++;
-  });
-  const fmtT = mn => String(Math.floor(mn/60)%24).padStart(2,'0')+':'+String(mn%60).padStart(2,'0');
-  const arr = Object.values(buckets).sort((a,b)=>a.start-b.start).map(b=>{
-    const total=b.win+b.loss; return {...b, total, span:fmtT(b.start)+'–'+fmtT(b.start+SIZE), wr: total?Math.round((b.win/total)*100):0};
-  });
-  // Best window = most wins (tie-break: higher win rate). Worst = most losses (tie-break: lower win rate).
-  const best=[...arr].filter(b=>b.win>0).sort((a,b)=> b.win-a.win || b.wr-a.wr)[0];
-  const worst=[...arr].filter(b=>b.loss>0).sort((a,b)=> b.loss-a.loss || a.wr-b.wr)[0];
-  summary.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-    <div style="background:rgba(76,175,133,0.10);border:0.5px solid rgba(76,175,133,0.35);border-radius:8px;padding:12px 14px">
-      <div style="font-size:10px;color:var(--green);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px">✅ Best window to enter</div>
-      ${best?`<div style="font-family:var(--fd);font-size:18px;font-weight:700;color:var(--green)">${best.span}</div><div style="font-size:12px;color:var(--muted);margin-top:3px">${best.win} win${best.win!==1?'s':''} · ${best.wr}% win rate (${best.total} trade${best.total!==1?'s':''})</div>`:'<div style="font-size:13px;color:var(--muted)">—</div>'}
-    </div>
-    <div style="background:rgba(229,115,104,0.10);border:0.5px solid rgba(229,115,104,0.35);border-radius:8px;padding:12px 14px">
-      <div style="font-size:10px;color:var(--red);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px">⚠️ Watch out — most losses</div>
-      ${worst?`<div style="font-family:var(--fd);font-size:18px;font-weight:700;color:var(--red)">${worst.span}</div><div style="font-size:12px;color:var(--muted);margin-top:3px">${worst.loss} loss${worst.loss!==1?'es':''} · ${worst.wr}% win rate (${worst.total} trade${worst.total!==1?'s':''})</div>`:'<div style="font-size:13px;color:var(--muted)">—</div>'}
-    </div>
-  </div>`;
-  // Stacked bar chart: wins (green) + losses (red) per time bucket
-  const labels=arr.map(b=>fmtT(b.start));
-  canvas.style.display='';
-  canvas.removeAttribute('style');
-  canvas.setAttribute('height', 120);
-  if(entryChart) entryChart.destroy();
-  entryChart=new Chart(canvas,{
-    type:'bar',
-    data:{labels,datasets:[
-      {label:'Wins',data:arr.map(b=>b.win),backgroundColor:'rgba(76,175,133,0.7)',borderColor:'#4caf85',borderWidth:1,borderRadius:3,stack:'s'},
-      {label:'Losses',data:arr.map(b=>b.loss),backgroundColor:'rgba(229,115,104,0.7)',borderColor:'#e57368',borderWidth:1,borderRadius:3,stack:'s'}
-    ]},
-    options:{responsive:true,maintainAspectRatio:true,
-      plugins:{legend:{display:true,labels:{color:'#888884',font:{size:11}}},tooltip:{callbacks:{
-        title:(items)=>{const b=arr[items[0].dataIndex];return b.span;},
-        afterBody:(items)=>{const b=arr[items[0].dataIndex];return `Win rate: ${b.wr}% (${b.win}W / ${b.loss}L)`;}
-      }}},
-      scales:{x:{stacked:true,ticks:{color:'#888884',font:{size:10},maxRotation:90,minRotation:0},grid:{color:'rgba(255,255,255,0.05)'}},y:{stacked:true,ticks:{color:'#888884',stepSize:1},grid:{color:'rgba(255,255,255,0.05)'},beginAtZero:true}}}
-  });
-  // Breakdown table
-  bd.innerHTML = `<div style="font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin:4px 0 10px;border-top:0.5px solid var(--border);padding-top:12px">By 30-min window · ${rel.length} timed trade${rel.length!==1?'s':''} (last 30 days)</div>`+
-    arr.map(b=>`
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:7px">
-        <div style="flex:0 0 110px;font-family:var(--fd);font-size:12px;color:var(--text)">${b.span}</div>
-        <div style="flex:1;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;display:flex"><div style="width:${b.total?Math.round(b.win/b.total*100):0}%;height:100%;background:var(--green)"></div><div style="width:${b.total?Math.round(b.loss/b.total*100):0}%;height:100%;background:var(--red)"></div></div>
-        <div style="font-family:var(--fd);font-size:12px;font-weight:700;color:${b.wr>=50?'var(--green)':'var(--red)'};min-width:120px;text-align:right">${b.wr}% · ${b.win}W/${b.loss}L</div>
-      </div>`).join('');
 }
 
 // ── PLAYBOOK ──────────────────────────────────────────────────
