@@ -478,7 +478,7 @@ input[type=file]{display:none}
           </div>
           <canvas id="equity-chart" height="95"></canvas>
         </div>
-        <div class="chart-card"><div class="chart-title">Total PnL — Per Trade ($) <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">· hover a bar for trade details</span></div><canvas id="pnl-chart" height="150"></canvas><div id="pnl-trade-info" style="display:none;margin-top:12px;border-top:0.5px solid var(--border);padding-top:12px"></div></div>
+        <div class="chart-card"><div class="chart-title">Total PnL — Per Trade ($) <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">· hover for details · double-click to open the trade</span></div><canvas id="pnl-chart" height="150"></canvas><div id="pnl-trade-info" style="display:none;margin-top:12px;border-top:0.5px solid var(--border);padding-top:12px"></div></div>
         <div class="chart-card"><div class="chart-title">Avg Reward (R) by Day <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Potential: all trades · Actual: Trade Journal)</span></div><canvas id="rr-chart" height="150"></canvas></div>
         <div class="chart-card" id="mistakes-chart-card"><div class="chart-title">Mistakes Made</div><div id="mistakes-breakdown" style="margin-top:6px"></div></div>
       </div>
@@ -1701,7 +1701,15 @@ function previewImg(i){
 
 // ── PERFORMANCE ───────────────────────────────────────────────
 let eChart,rChart,mChart,pnlChart;
-// Click a bar in the "Total PnL — Per Trade ($)" chart to inspect that trade.
+// Double-click a bar in the PnL per-trade chart → open that trade in the Trade Journal.
+function _pnlOpenTrade(t){
+  if(!t) return;
+  const ji = trades.indexOf(t);
+  if(ji>=0){ switchPage('tradelog'); setTimeout(()=>openEditTrade(ji,false),40); return; }
+  const ti = (typeof todTrades!=='undefined') ? todTrades.indexOf(t) : -1;
+  if(ti>=0){ switchPage('tradelog'); setTimeout(()=>openEditTrade(ti,true),40); return; }
+}
+// Hover a bar in the "Total PnL — Per Trade ($)" chart to inspect that trade.
 function _pnlShowTrade(t){
   const box=document.getElementById('pnl-trade-info'); if(!box||!t) return;
   const ticked = !!(t.checks && t.checks[4]==='Y');
@@ -1786,19 +1794,25 @@ function renderPerformance(){
   // so map the cursor's x to the nearest bar ourselves via the bounding rect + the chart's x scale.
   const _pnlCanvas=document.getElementById('pnl-chart');
   if(_pnlCanvas){
-    _pnlCanvas.onmousemove=(e)=>{
-      const box=document.getElementById('pnl-trade-info');
-      if(!pnlChart||!pnlChart.chartArea||!_pnlTrades.length) return;
-      const rect=_pnlCanvas.getBoundingClientRect(); if(!rect.width) return;
+    // Zoom-proof: map the cursor x to the nearest bar index (-1 if outside the plot area).
+    const _pnlIdxAt=(e)=>{
+      if(!pnlChart||!pnlChart.chartArea||!_pnlTrades.length) return -1;
+      const rect=_pnlCanvas.getBoundingClientRect(); if(!rect.width) return -1;
       const cssX=(e.clientX-rect.left)/rect.width*_pnlCanvas.clientWidth;   // cursor x in the canvas's CSS-pixel space (zoom cancels in the ratio)
       const ca=pnlChart.chartArea;
-      if(cssX<ca.left||cssX>ca.right){ if(box) box.style.display='none'; _pnlCanvas.style.cursor='default'; return; }
+      if(cssX<ca.left||cssX>ca.right) return -1;
       let idx=Math.round(pnlChart.scales.x.getValueForPixel(cssX));
-      idx=Math.max(0,Math.min(_pnlTrades.length-1,idx));
+      return Math.max(0,Math.min(_pnlTrades.length-1,idx));
+    };
+    _pnlCanvas.onmousemove=(e)=>{
+      const box=document.getElementById('pnl-trade-info');
+      const idx=_pnlIdxAt(e);
+      if(idx<0){ if(box) box.style.display='none'; _pnlCanvas.style.cursor='default'; return; }
       _pnlCanvas.style.cursor='pointer';
       _pnlShowTrade(_pnlTrades[idx]);
     };
     _pnlCanvas.onmouseleave=()=>{ const b=document.getElementById('pnl-trade-info'); if(b) b.style.display='none'; _pnlCanvas.style.cursor='default'; };
+    _pnlCanvas.ondblclick=(e)=>{ const idx=_pnlIdxAt(e); if(idx>=0) _pnlOpenTrade(_pnlTrades[idx]); };
   }
   if(rChart)rChart.destroy();
   // Reward chart — BAR chart grouped by DAY, showing each day's AVERAGE RR:
