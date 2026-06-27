@@ -431,7 +431,7 @@ input[type=file]{display:none}
         <button class="add-trade-btn" onclick="openTodModal()"><i class="ti ti-plus"></i> Log New Trade</button>
         <div class="empty-log" id="tod-empty-msg">No trades logged yet — hit "Log New Trade" to start.</div>
         <table class="log-table" id="tod-table" style="display:none">
-          <thead><tr><th>Date</th><th>Chart</th><th>Ticker</th><th>Setup</th><th>Planned RR</th><th>Actual RR</th><th>RR Potential</th><th>W/L</th><th></th></tr></thead>
+          <thead><tr><th data-key="date" data-label="Date" onclick="sortTradesOfDay('date')" style="cursor:pointer;user-select:none" title="Sort by date">Date</th><th>Chart</th><th data-key="ticker" data-label="Ticker" onclick="sortTradesOfDay('ticker')" style="cursor:pointer;user-select:none" title="Sort A–Z">Ticker</th><th data-key="setup" data-label="Setup" onclick="sortTradesOfDay('setup')" style="cursor:pointer;user-select:none" title="Sort A–Z">Setup</th><th data-key="plannedRR" data-label="Planned RR" onclick="sortTradesOfDay('plannedRR')" style="cursor:pointer;user-select:none" title="Sort by value">Planned RR</th><th data-key="actualRR" data-label="Actual RR" onclick="sortTradesOfDay('actualRR')" style="cursor:pointer;user-select:none" title="Sort by value">Actual RR</th><th data-key="rrPot" data-label="RR Potential" onclick="sortTradesOfDay('rrPot')" style="cursor:pointer;user-select:none" title="Sort by value">RR Potential</th><th data-key="wl" data-label="W/L" onclick="sortTradesOfDay('wl')" style="cursor:pointer;user-select:none" title="Sort by result">W/L</th><th></th></tr></thead>
           <tbody id="tod-tbody"></tbody>
         </table>
       </div>
@@ -440,7 +440,7 @@ input[type=file]{display:none}
         <button class="add-trade-btn" onclick="openModal()"><i class="ti ti-plus"></i> Log New Trade</button>
         <div class="empty-log" id="empty-log-msg">No trades logged yet — hit "Log New Trade" to start.</div>
         <table class="log-table" id="log-table" style="display:none">
-          <thead><tr><th>Date</th><th>Chart</th><th>Ticker</th><th>Setup</th><th>Planned RR</th><th>Actual RR</th><th>RR Potential</th><th>W/L</th><th></th></tr></thead>
+          <thead><tr><th data-key="date" data-label="Date" onclick="sortTradeJournal('date')" style="cursor:pointer;user-select:none" title="Sort by date">Date</th><th>Chart</th><th data-key="ticker" data-label="Ticker" onclick="sortTradeJournal('ticker')" style="cursor:pointer;user-select:none" title="Sort A–Z">Ticker</th><th data-key="setup" data-label="Setup" onclick="sortTradeJournal('setup')" style="cursor:pointer;user-select:none" title="Sort A–Z">Setup</th><th data-key="plannedRR" data-label="Planned RR" onclick="sortTradeJournal('plannedRR')" style="cursor:pointer;user-select:none" title="Sort by value">Planned RR</th><th data-key="actualRR" data-label="Actual RR" onclick="sortTradeJournal('actualRR')" style="cursor:pointer;user-select:none" title="Sort by value">Actual RR</th><th data-key="rrPot" data-label="RR Potential" onclick="sortTradeJournal('rrPot')" style="cursor:pointer;user-select:none" title="Sort by value">RR Potential</th><th data-key="wl" data-label="W/L" onclick="sortTradeJournal('wl')" style="cursor:pointer;user-select:none" title="Sort by result">W/L</th><th></th></tr></thead>
           <tbody id="log-tbody"></tbody>
         </table>
       </div>
@@ -1644,11 +1644,55 @@ function saveTrade(){
   renderPlaybook();
 }
 
+// ── TABLE SORTING (Trade Journal + Trades of the Day) ─────────
+// Sorts a VIEW that preserves each trade's original array index, so click-to-edit
+// and delete (which reference the index) keep working. The underlying arrays are
+// never reordered, so nothing extra is written to the cloud.
+let _tjSort  = { key:null, dir:1 };
+let _todSort = { key:null, dir:1 };
+function _tradeSortVal(t, key){
+  switch(key){
+    case 'date':      return t.date || '';
+    case 'ticker':    return (t.ticker||'').toUpperCase();
+    case 'setup':     return (t.setup||'').toUpperCase();
+    case 'plannedRR': return parseFloat(t.plannedRR)||0;
+    case 'actualRR':  return parseFloat(t.actualRR)||0;
+    case 'rrPot':     return parseFloat(t.rrPot)||0;
+    case 'wl':        return ({W:3,BE:2,L:1}[t.wl]||0);
+    default:          return '';
+  }
+}
+function _sortedIndices(arr, sort){
+  const idx = arr.map((_,i)=>i);
+  if(!sort.key) return idx;
+  return idx.sort((a,b)=>{
+    const va=_tradeSortVal(arr[a],sort.key), vb=_tradeSortVal(arr[b],sort.key);
+    let c = (typeof va==='number' && typeof vb==='number') ? (va-vb) : String(va).localeCompare(String(vb));
+    if(c===0) return a-b; // stable: fall back to original order
+    return c*sort.dir;
+  });
+}
+function _updateSortArrows(tableId, sort){
+  document.querySelectorAll('#'+tableId+' thead th[data-key]').forEach(th=>{
+    const k=th.getAttribute('data-key'), base=th.getAttribute('data-label')||'';
+    const arrow = sort.key===k ? (sort.dir>0?'▲':'▼') : '<span style="opacity:.25">↕</span>';
+    th.innerHTML = base + ' <span style="font-size:9px;color:var(--accent2)">'+arrow+'</span>';
+  });
+}
+function sortTradeJournal(key){
+  if(_tjSort.key===key) _tjSort.dir*=-1; else { _tjSort.key=key; _tjSort.dir=1; }
+  renderTradeTable();
+}
+function sortTradesOfDay(key){
+  if(_todSort.key===key) _todSort.dir*=-1; else { _todSort.key=key; _todSort.dir=1; }
+  renderTradesOfDay();
+}
+
 function renderTradeTable(){
   const tbody=document.getElementById('log-tbody'),tbl=document.getElementById('log-table'),msg=document.getElementById('empty-log-msg');
   if(!trades.length){tbl.style.display='none';msg.style.display='block';return;}
   tbl.style.display='table';msg.style.display='none';
-  tbody.innerHTML=trades.map((t,i)=>`
+  tbody.innerHTML=_sortedIndices(trades,_tjSort).map(i=>{const t=trades[i];return `
     <tr onclick="openEditTrade(${i},false)" style="cursor:pointer" title="Click to edit this trade">
       <td>${fmtDMY(t.date)}</td>
       <td>${t.images[0]?`<img class="td-thumb" src="${t.images[0]}" onclick="event.stopPropagation();previewImg(${i})" title="Click to enlarge">`:`<span class="td-no-img">—</span>`}</td>
@@ -1659,7 +1703,8 @@ function renderTradeTable(){
       <td>${t.rrPot}</td>
       <td class="${t.wl==='W'?'td-w':t.wl==='L'?'td-l':''}" style="${t.wl==='BE'?'color:var(--accent2);font-family:var(--fd);font-weight:700':''}">${t.wl}</td>
       <td style="text-align:center"><button onclick="event.stopPropagation();deleteTrade(${i})" title="Delete this trade" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:14px;cursor:pointer;padding:2px 6px;border-radius:4px;transition:all .12s" onmouseover="this.style.color='var(--red)';this.style.background='rgba(229,115,104,0.12)'" onmouseout="this.style.color='rgba(255,255,255,0.3)';this.style.background='transparent'"><i class="ti ti-trash"></i></button></td>
-    </tr>`).join('');
+    </tr>`;}).join('');
+  _updateSortArrows('log-table',_tjSort);
 }
 
 function deleteTrade(i){
@@ -4043,7 +4088,7 @@ function renderTradesOfDay() {
   const msg = document.getElementById('tod-empty-msg');
   if (!todTrades.length) { tbl.style.display='none'; msg.style.display='block'; return; }
   tbl.style.display = 'table'; msg.style.display = 'none';
-  tbody.innerHTML = todTrades.map((t,i) => `<tr onclick="openEditTrade(${i},true)" style="cursor:pointer" title="Click to edit this trade">
+  tbody.innerHTML = _sortedIndices(todTrades,_todSort).map(i => {const t=todTrades[i];return `<tr onclick="openEditTrade(${i},true)" style="cursor:pointer" title="Click to edit this trade">
     <td>${fmtDMY(t.date)}</td>
     <td>${t.images&&t.images[0]?`<img class="td-thumb" src="${t.images[0]}" onclick="event.stopPropagation();previewTodImg(${i})" title="Click to enlarge">`:`<span class="td-no-img">—</span>`}</td>
     <td class="td-ticker">${t.ticker}</td>
@@ -4053,7 +4098,8 @@ function renderTradesOfDay() {
     <td>${t.rrPot}</td>
     <td class="${t.wl==='W'?'td-w':t.wl==='L'?'td-l':''}" style="${t.wl==='BE'?'color:var(--accent2);font-family:var(--fd);font-weight:700':''}">${t.wl}</td>
     <td style="text-align:center"><button onclick="event.stopPropagation();deleteTodTrade(${i})" title="Delete this trade" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:14px;cursor:pointer;padding:2px 6px;border-radius:4px;transition:all .12s" onmouseover="this.style.color='var(--red)';this.style.background='rgba(229,115,104,0.12)'" onmouseout="this.style.color='rgba(255,255,255,0.3)';this.style.background='transparent'"><i class="ti ti-trash"></i></button></td>
-  </tr>`).join('');
+  </tr>`;}).join('');
+  _updateSortArrows('tod-table',_todSort);
 }
 
 function previewTodImg(i) {
