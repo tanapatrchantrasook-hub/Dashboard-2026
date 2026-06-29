@@ -1796,15 +1796,19 @@ function renderPerformance(){
   // so map the cursor's x to the nearest bar ourselves via the bounding rect + the chart's x scale.
   const _pnlCanvas=document.getElementById('pnl-chart');
   if(_pnlCanvas){
-    // Zoom-proof: map the cursor x to the nearest bar index (-1 if outside the plot area).
+    // Zoom-proof: map the cursor x into the chart's OWN coordinate space (canvas.width/dpr — NOT
+    // clientWidth, which differs under CSS zoom), then pick the nearest bar by its plotted x.
     const _pnlIdxAt=(e)=>{
       if(!pnlChart||!pnlChart.chartArea||!_pnlTrades.length) return -1;
+      const meta=pnlChart.getDatasetMeta(0); if(!meta||!meta.data||!meta.data.length) return -1;
       const rect=_pnlCanvas.getBoundingClientRect(); if(!rect.width) return -1;
-      const cssX=(e.clientX-rect.left)/rect.width*_pnlCanvas.clientWidth;   // cursor x in the canvas's CSS-pixel space (zoom cancels in the ratio)
+      const internalW=_pnlCanvas.width/(window.devicePixelRatio||1);   // the chart's coordinate width
+      const chartX=(e.clientX-rect.left)/rect.width*internalW;          // cursor x in chart coords
       const ca=pnlChart.chartArea;
-      if(cssX<ca.left||cssX>ca.right) return -1;
-      let idx=Math.round(pnlChart.scales.x.getValueForPixel(cssX));
-      return Math.max(0,Math.min(_pnlTrades.length-1,idx));
+      if(chartX<ca.left-8 || chartX>ca.right+8) return -1;             // outside the plotted area
+      let best=-1, bestD=Infinity;
+      for(let i=0;i<meta.data.length;i++){ const d=Math.abs(meta.data[i].x-chartX); if(d<bestD){ bestD=d; best=i; } }
+      return best;
     };
     _pnlCanvas.onmousemove=(e)=>{
       const box=document.getElementById('pnl-trade-info');
