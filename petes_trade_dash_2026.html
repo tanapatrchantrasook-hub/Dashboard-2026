@@ -479,7 +479,7 @@ input[type=file]{display:none}
           <canvas id="equity-chart" height="95"></canvas>
         </div>
         <div class="chart-card"><div class="chart-title">Total PnL — Per Trade ($) <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">· hover for details · double-click to open the trade</span></div><canvas id="pnl-chart" height="150"></canvas><div id="pnl-trade-info" style="display:none;margin-top:12px;border-top:0.5px solid var(--border);padding-top:12px"></div></div>
-        <div class="chart-card"><div class="chart-title">Avg Reward (R) by Day <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Potential: all trades · Actual: Trade Journal)</span></div><canvas id="rr-chart" height="150"></canvas></div>
+        <div class="chart-card"><div class="chart-title">Avg Reward (R) by Day <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Potential: all trades · Actual: Trade Journal) · hover a day for details</span></div><canvas id="rr-chart" height="150"></canvas><div id="rr-trade-info" style="display:none;margin-top:12px;border-top:0.5px solid var(--border);padding-top:12px"></div></div>
         <div class="chart-card" id="mistakes-chart-card"><div class="chart-title">Mistakes Made</div><div id="mistakes-breakdown" style="margin-top:6px"></div></div>
       </div>
       <div class="chart-card" id="setup-perf-card" style="margin-top:14px">
@@ -1845,17 +1845,40 @@ function renderPerformance(){
   rChart=new Chart(document.getElementById('rr-chart'),{type:'bar',data:{labels:rLabels,datasets:[
     {label:'Avg Reward Potential (R)',data:potData,backgroundColor:'rgba(76,175,133,0.65)',borderColor:'#4caf85',borderWidth:1,borderRadius:4,maxBarThickness:30},
     {label:'Avg Actual Reward (R)',data:actData,backgroundColor:acBar,borderColor:ac,borderWidth:1,borderRadius:4,maxBarThickness:30}
-  ]},options:{...opts,plugins:{...opts.plugins,legend:{display:true,labels:{color:'#888884',font:{size:11}}},tooltip:{...opts.plugins.tooltip,callbacks:{
-    title:(items)=>items[0].label,
-    afterTitle:(items)=>{
-      if(items[0].datasetIndex!==0)return '';
-      const d=days[items[0].dataIndex]; const list=dayBreakdown[d]||[];
-      if(!list.length)return '';
-      return list.map(x=>`  ${x.ticker} · ${x.setup}  →  ${x.rrPot}R`).join('\n');
-    },
-    label:(item)=>` ${item.dataset.label}: ${item.raw!=null?item.raw+'R':'—'}`,
-    afterBody:(items)=>{const d=days[items[0].dataIndex];const m=dayMap[d];return m?`\nTrades: ${m.pot.length} with potential, ${m.act.length} with actual`:'';},
-  }}},scales:{x:{ticks:{color:'#888884'},grid:{color:gc}},y:{ticks:{color:'#888884'},grid:{color:gc}}}}});
+  ]},options:{...opts,plugins:{...opts.plugins,legend:{display:true,labels:{color:'#888884',font:{size:11}}},tooltip:{enabled:false}},scales:{x:{ticks:{color:'#888884'},grid:{color:gc}},y:{ticks:{color:'#888884'},grid:{color:gc}}}}});
+  // Zoom-proof hover for Avg Reward by Day → show the day's avg potential/actual + trade breakdown.
+  const _rrCanvas=document.getElementById('rr-chart');
+  if(_rrCanvas){
+    const _rrShowDay=(i)=>{
+      const box=document.getElementById('rr-trade-info'); if(!box||i<0||i>=days.length) return;
+      const d=days[i], m=dayMap[d]||{pot:[],act:[]}, list=dayBreakdown[d]||[];
+      const pot=potData[i], act=actData[i];
+      box.style.display='block';
+      box.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+          <div style="font-family:var(--fd);font-size:13px;font-weight:700;color:var(--text)">${fmtDMY(d)}</div>
+          <div style="display:flex;gap:14px;font-size:12px;font-family:var(--fd)">
+            <span style="color:var(--green)">Avg Potential: ${pot!=null?pot+'R':'—'}</span>
+            <span style="color:var(--accent2)">Avg Actual: ${act!=null?act+'R':'—'}</span>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--muted)${list.length?';margin-bottom:8px':''}">${m.pot.length} trade${m.pot.length!==1?'s':''} with potential · ${m.act.length} with actual</div>
+        ${list.length?'<div style="display:flex;flex-direction:column;gap:3px">'+list.map(x=>`<div style="font-size:11px;color:var(--text);line-height:1.35"><span style="color:var(--accent2)">•</span> ${_escHtml(x.ticker)} · ${_escHtml(x.setup)} <span style="color:var(--green);font-family:var(--fd)">→ ${x.rrPot}R</span></div>`).join('')+'</div>':''}`;
+    };
+    const _rrIdxAt=(e)=>{
+      if(!rChart||!rChart.chartArea||!days.length) return -1;
+      const rect=_rrCanvas.getBoundingClientRect(); if(!rect.width) return -1;
+      const internalW=_rrCanvas.width/(window.devicePixelRatio||1);
+      const chartX=(e.clientX-rect.left)/rect.width*internalW;
+      const ca=rChart.chartArea;
+      if(chartX<ca.left-8||chartX>ca.right+8) return -1;
+      let best=-1,bestD=Infinity;
+      for(let i=0;i<days.length;i++){ const cx=rChart.scales.x.getPixelForValue(i); const dd=Math.abs(cx-chartX); if(dd<bestD){ bestD=dd; best=i; } }
+      return best;
+    };
+    _rrCanvas.onmousemove=(e)=>{ const box=document.getElementById('rr-trade-info'); const i=_rrIdxAt(e); if(i<0){ if(box) box.style.display='none'; _rrCanvas.style.cursor='default'; return; } _rrCanvas.style.cursor='pointer'; _rrShowDay(i); };
+    _rrCanvas.onmouseleave=()=>{ const b=document.getElementById('rr-trade-info'); if(b) b.style.display='none'; _rrCanvas.style.cursor='default'; };
+  }
 
   // Mistakes Made — ranked breakdown (the bars here are the chart; no separate canvas)
   const mistakeCard = document.getElementById('mistakes-chart-card');
