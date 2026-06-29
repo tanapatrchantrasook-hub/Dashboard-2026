@@ -6064,10 +6064,18 @@ function rcGetOrCreate(dateStr) {
       routineScore: '', mgmtScore: '',
       texts: {},     // { id: string }
       missedReasons: {}, // { reasonIndex: true }
-      score: ''
+      score: '',
+      // Per-day SNAPSHOT of the routine/management lists, so editing the list later
+      // only affects the current day + future days — never reshapes past days.
+      routineRows: RC_ROUTINE_ROWS.map(r => ({ ...r })),
+      mgmtRows: RC_MGMT_ROWS.map(r => ({ ...r }))
     };
   }
-  return reportCards[dateStr];
+  // Safety net for any card that predates the snapshot model (load-time migration also covers this).
+  const c = reportCards[dateStr];
+  if (!Array.isArray(c.routineRows)) c.routineRows = RC_ROUTINE_ROWS.map(r => ({ ...r }));
+  if (!Array.isArray(c.mgmtRows)) c.mgmtRows = RC_MGMT_ROWS.map(r => ({ ...r }));
+  return c;
 }
 
 function rcRenderRows() {
@@ -6075,8 +6083,8 @@ function rcRenderRows() {
 
   const _ic = (fn,id,icon,col) => `<button onclick="event.stopPropagation();${fn}('${id}')" title="${icon==='✕'?'Delete':'Edit'}" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:${icon==='✕'?'12':'11'}px;cursor:pointer;padding:0 2px" onmouseover="this.style.color='${col}'" onmouseout="this.style.color='rgba(255,255,255,0.3)'">${icon==='✕'?'✕':"<i class='ti ti-pencil'></i>"}</button>`;
 
-  // Routine rows
-  document.getElementById('rc-routine-rows').innerHTML = RC_ROUTINE_ROWS.map(r => `
+  // Routine rows — from THIS day's snapshot (not the global template)
+  document.getElementById('rc-routine-rows').innerHTML = (card.routineRows||RC_ROUTINE_ROWS).map(r => `
     <div style="display:grid;grid-template-columns:84px 1fr auto;padding:9px 10px;border-bottom:0.5px solid var(--border);border-right:0.5px solid var(--border2);align-items:center;gap:6px">
       <div style="font-size:11px;color:var(--muted);font-family:var(--fd)">${_escHtml(r.time||'')}</div>
       <div style="font-size:12px;color:var(--text);line-height:1.4">${_escHtml(r.label)}</div>
@@ -6087,8 +6095,8 @@ function rcRenderRows() {
     </div>`).join('') +
     `<div style="padding:8px 10px;border-right:0.5px solid var(--border2)"><button onclick="rcAddRoutine()" style="background:transparent;border:0.5px dashed var(--border2);color:var(--muted);border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;font-family:var(--fb);width:100%" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent2)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'">+ Add routine item</button></div>`;
 
-  // Management rows
-  document.getElementById('rc-mgmt-rows').innerHTML = RC_MGMT_ROWS.map(r => `
+  // Management rows — from THIS day's snapshot
+  document.getElementById('rc-mgmt-rows').innerHTML = (card.mgmtRows||RC_MGMT_ROWS).map(r => `
     <div style="display:grid;grid-template-columns:1fr auto;padding:9px 10px;border-bottom:0.5px solid var(--border);align-items:center;gap:6px">
       <div style="font-size:12px;color:var(--text)">${_escHtml(r.label)}</div>
       <div style="display:flex;gap:5px;align-items:center;justify-content:flex-end">
@@ -6200,10 +6208,11 @@ function rcFieldChanged() {
 
 function rcUpdateScores() {
   const card = rcGetOrCreate(rcCurrentDate);
-  const routineDone = RC_ROUTINE_ROWS.filter(r => card.routine[r.id]).length;
-  const mgmtYes = RC_MGMT_ROWS.filter(r => card.mgmt[r.id] === 'Y').length;
-  card.routineScore = routineDone + '/' + RC_ROUTINE_ROWS.length;
-  card.mgmtScore = mgmtYes + '/' + RC_MGMT_ROWS.length;
+  const rRows = card.routineRows || RC_ROUTINE_ROWS, mRows = card.mgmtRows || RC_MGMT_ROWS;
+  const routineDone = rRows.filter(r => card.routine[r.id]).length;
+  const mgmtYes = mRows.filter(r => card.mgmt[r.id] === 'Y').length;
+  card.routineScore = routineDone + '/' + rRows.length;
+  card.mgmtScore = mgmtYes + '/' + mRows.length;
   const rEl = document.getElementById('rc-routine-score');
   const mEl = document.getElementById('rc-mgmt-score');
   if (rEl) rEl.value = card.routineScore;
@@ -6211,8 +6220,8 @@ function rcUpdateScores() {
 
   // ── Overall Score (0/5), auto-calculated ──
   // 2 pts from routine completion, 2 pts from management Y's, 1 pt from journaling (sections written)
-  const routineRatio = RC_ROUTINE_ROWS.length ? routineDone / RC_ROUTINE_ROWS.length : 0;
-  const mgmtRatio = RC_MGMT_ROWS.length ? mgmtYes / RC_MGMT_ROWS.length : 0;
+  const routineRatio = rRows.length ? routineDone / rRows.length : 0;
+  const mgmtRatio = mRows.length ? mgmtYes / mRows.length : 0;
   const journalSecs = RC_TEXT_SECTIONS.filter(s => s.id !== 'missed'); // missed has no text box
   const writtenCount = journalSecs.filter(s => (card.texts[s.id] || '').trim().length > 2).length;
   const writtenRatio = journalSecs.length ? writtenCount / journalSecs.length : 0;
@@ -6236,12 +6245,12 @@ function rcUpdateScores() {
     else { tone = 'Nothing logged yet for this day.'; headColor = 'var(--muted)'; }
 
     // Build the reason breakdown
-    const reason = `Routine <strong style="color:var(--text)">${routineDone}/${RC_ROUTINE_ROWS.length}</strong> · Management <strong style="color:var(--text)">${mgmtYes}/${RC_MGMT_ROWS.length}</strong> · Journaling <strong style="color:var(--text)">${writtenCount}/${journalSecs.length}</strong> sections written.`;
+    const reason = `Routine <strong style="color:var(--text)">${routineDone}/${rRows.length}</strong> · Management <strong style="color:var(--text)">${mgmtYes}/${mRows.length}</strong> · Journaling <strong style="color:var(--text)">${writtenCount}/${journalSecs.length}</strong> sections written.`;
 
     // Targeted advice — weakest area first
     const tips = [];
-    if (routineRatio < 0.75) tips.push(`Complete more of your pre-market <strong>routine</strong> — ${RC_ROUTINE_ROWS.length - routineDone} item${(RC_ROUTINE_ROWS.length-routineDone)!==1?'s':''} unticked.`);
-    if (mgmtRatio < 0.75) tips.push(`Tighten <strong>trade management</strong> — ${RC_MGMT_ROWS.length - mgmtYes} item${(RC_MGMT_ROWS.length-mgmtYes)!==1?'s':''} not a clean Yes.`);
+    if (routineRatio < 0.75) tips.push(`Complete more of your pre-market <strong>routine</strong> — ${rRows.length - routineDone} item${(rRows.length-routineDone)!==1?'s':''} unticked.`);
+    if (mgmtRatio < 0.75) tips.push(`Tighten <strong>trade management</strong> — ${mRows.length - mgmtYes} item${(mRows.length-mgmtYes)!==1?'s':''} not a clean Yes.`);
     if (writtenRatio < 1) {
       const missing = journalSecs.filter(s => (card.texts[s.id]||'').trim().length <= 2).map(s => s.label.split(/[:\/]/)[0].trim());
       if (missing.length) tips.push(`Finish journaling: <strong>${missing.slice(0,3).join(', ')}</strong>${missing.length>3?'…':''}.`);
@@ -6267,41 +6276,57 @@ function rcToggleRoutine(id) {
 }
 
 // ── Edit / add / delete Daily Routine & Trade Management items ──
+// Edits apply to the CURRENT day's snapshot (card.routineRows/mgmtRows) and to the global
+// template (so future new days inherit them) — past days keep their own snapshots untouched.
 function rcAddRoutine(){
   const label = prompt('New routine item:'); if(label===null||!label.trim()) return;
   const time = prompt('Time (optional, e.g. 19:00–20:00):','') || '';
-  RC_ROUTINE_ROWS.push({ id:'r'+Date.now(), time:time.trim(), label:label.trim() });
+  const item = { id:'r'+Date.now(), time:time.trim(), label:label.trim() };
+  const card = rcGetOrCreate(rcCurrentDate);
+  card.routineRows.push({ ...item });
+  RC_ROUTINE_ROWS.push({ ...item });
   rcRenderRows(); rcUpdateScores(); scheduleSave();
 }
 function rcEditRoutine(id){
-  const r = RC_ROUTINE_ROWS.find(x=>x.id===id); if(!r) return;
+  const card = rcGetOrCreate(rcCurrentDate);
+  const r = (card.routineRows||[]).find(x=>x.id===id); if(!r) return;
   const label = prompt('Edit routine item:', r.label); if(label===null) return;
   if(!label.trim()) return;
   const time = prompt('Time (optional):', r.time||'');
   r.label = label.trim(); if(time!==null) r.time = time.trim();
+  const g = RC_ROUTINE_ROWS.find(x=>x.id===id); if(g){ g.label=r.label; g.time=r.time; }
   rcRenderRows(); rcUpdateScores(); scheduleSave();
 }
 function rcDeleteRoutine(id){
-  const r = RC_ROUTINE_ROWS.find(x=>x.id===id); if(!r) return;
+  const card = rcGetOrCreate(rcCurrentDate);
+  const r = (card.routineRows||[]).find(x=>x.id===id); if(!r) return;
   if(!confirm('Delete routine item "'+r.label+'"?')) return;
+  card.routineRows = card.routineRows.filter(x=>x.id!==id);
   RC_ROUTINE_ROWS = RC_ROUTINE_ROWS.filter(x=>x.id!==id);
   rcRenderRows(); rcUpdateScores(); scheduleSave();
 }
 function rcAddMgmt(){
   const label = prompt('New trade-management item:'); if(label===null||!label.trim()) return;
-  RC_MGMT_ROWS.push({ id:'m'+Date.now(), label:label.trim() });
+  const item = { id:'m'+Date.now(), label:label.trim() };
+  const card = rcGetOrCreate(rcCurrentDate);
+  card.mgmtRows.push({ ...item });
+  RC_MGMT_ROWS.push({ ...item });
   rcRenderRows(); rcUpdateScores(); scheduleSave();
 }
 function rcEditMgmt(id){
-  const r = RC_MGMT_ROWS.find(x=>x.id===id); if(!r) return;
+  const card = rcGetOrCreate(rcCurrentDate);
+  const r = (card.mgmtRows||[]).find(x=>x.id===id); if(!r) return;
   const label = prompt('Edit trade-management item:', r.label); if(label===null) return;
   if(!label.trim()) return;
   r.label = label.trim();
+  const g = RC_MGMT_ROWS.find(x=>x.id===id); if(g) g.label=r.label;
   rcRenderRows(); rcUpdateScores(); scheduleSave();
 }
 function rcDeleteMgmt(id){
-  const r = RC_MGMT_ROWS.find(x=>x.id===id); if(!r) return;
+  const card = rcGetOrCreate(rcCurrentDate);
+  const r = (card.mgmtRows||[]).find(x=>x.id===id); if(!r) return;
   if(!confirm('Delete management item "'+r.label+'"?')) return;
+  card.mgmtRows = card.mgmtRows.filter(x=>x.id!==id);
   RC_MGMT_ROWS = RC_MGMT_ROWS.filter(x=>x.id!==id);
   rcRenderRows(); rcUpdateScores(); scheduleSave();
 }
@@ -6617,6 +6642,12 @@ async function loadSavedData() {
     // Restore edited Daily Routine & Trade Management item lists
     if (Array.isArray(d.rcRoutineRows) && d.rcRoutineRows.length) RC_ROUTINE_ROWS = d.rcRoutineRows;
     if (Array.isArray(d.rcMgmtRows) && d.rcMgmtRows.length) RC_MGMT_ROWS = d.rcMgmtRows;
+    // Freeze each existing report card's routine/management list to its current state, so future
+    // edits to the lists only affect today + forward — never the routines shown/ticked on past days.
+    Object.values(reportCards).forEach(c => {
+      if (c && !Array.isArray(c.routineRows)) c.routineRows = RC_ROUTINE_ROWS.map(r => ({ ...r }));
+      if (c && !Array.isArray(c.mgmtRows))    c.mgmtRows    = RC_MGMT_ROWS.map(r => ({ ...r }));
+    });
     // Restore Stock Screener symbols + preferences
     if (Array.isArray(d.screenerSymbols) && d.screenerSymbols.length) { screenerSymbols.push(...d.screenerSymbols); }
     if (d.screenerTF) screenerTF = d.screenerTF;
