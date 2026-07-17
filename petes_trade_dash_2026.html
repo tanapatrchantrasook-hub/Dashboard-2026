@@ -1058,6 +1058,15 @@ input[type=file]{display:none}
   <button onclick="dismissDailyStopBanner()" style="background:rgba(255,255,255,0.2);border:0.5px solid rgba(255,255,255,0.4);color:#fff;border-radius:5px;padding:5px 12px;font-size:12px;cursor:pointer;font-family:var(--fb)">Dismiss for now</button>
 </div>
 
+<!-- SAVE-STATUS BANNER — shown whenever changes are NOT reaching the server (e.g. the file was opened directly instead of via the server). Prevents silent data loss. -->
+<div id="save-status-banner" style="display:none;position:fixed;left:0;right:0;top:0;z-index:300;background:linear-gradient(180deg,rgba(229,115,104,0.98),rgba(229,115,104,0.94));color:#fff;padding:10px 20px;box-shadow:0 4px 20px rgba(0,0,0,0.4);align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;text-align:center">
+  <span style="font-size:18px">⚠️</span>
+  <div>
+    <div style="font-family:var(--fd);font-size:14px;font-weight:700;letter-spacing:0.03em">NOT SAVING TO SERVER — changes are kept only in this browser</div>
+    <div style="font-size:12px;opacity:0.96;margin-top:2px">Start the app with <b>launch.vbs</b> and open <b>http://localhost:3000</b> (do not open the .html file directly). Until then, don't clear this browser's data.</div>
+  </div>
+</div>
+
 <!-- MAJORITY CRITERIA BANNER (playbook setup — enough green flags vs red flags) -->
 <div id="majority-criteria-banner" style="display:none;position:fixed;left:0;right:0;bottom:0;z-index:200;background:linear-gradient(0deg,rgba(76,175,133,0.97),rgba(76,175,133,0.92));color:#fff;padding:12px 22px;box-shadow:0 -4px 20px rgba(0,0,0,0.4);align-items:center;justify-content:center;gap:16px;flex-wrap:wrap;text-align:center">
   <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:center">
@@ -1247,13 +1256,22 @@ const pageTitles={
   screener:'STOCK <span style="color:var(--accent)">SCREENER</span>',
 };
 let currentTheme='teal';
-function toggleTheme(){
-  currentTheme = currentTheme==='orange' ? 'teal' : 'orange';
+// Apply a theme ('teal' = 🌙 moon, 'orange' = ☀️ sun) to the UI. Does NOT persist.
+function applyTheme(theme){
+  currentTheme = theme==='orange' ? 'orange' : 'teal';
   document.body.classList.toggle('theme-teal', currentTheme==='teal');
-  document.getElementById('theme-label').textContent = currentTheme==='orange' ? '☀️' : '🌙';
+  const lbl = document.getElementById('theme-label');
+  if(lbl) lbl.textContent = currentTheme==='orange' ? '☀️' : '🌙';
+}
+function toggleTheme(){
+  applyTheme(currentTheme==='orange' ? 'teal' : 'orange');
+  // remember the choice on this device so it sticks across reloads
+  try { localStorage.setItem('petesDashTheme', currentTheme); } catch(e){}
   // re-render charts so their colors match the new accent
   if(document.getElementById('page-perf').classList.contains('active')) renderPerformance();
 }
+// Restore the saved theme as early as possible (before startup rendering)
+try { applyTheme(localStorage.getItem('petesDashTheme') || 'teal'); } catch(e){}
 function themeAccent(){ return getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#e05c2a'; }
 
 // Bigger-text toggle (magnifier, top-right): scales the whole UI ~15% for larger screens.
@@ -6479,6 +6497,7 @@ function rcSelectFromDropdown(dateStr) {
 // SAFETY: never save until the server's data has successfully loaded into the page.
 // This stops a blank/initial page state from overwriting (and wiping) saved data.
 let dataReady = false;
+let serverAvailable = true; // set false if the server can't be reached at load — enables browser-only mode
 let _saveTimer = null;
 function scheduleSave() {
   if (!dataReady) return; // ignore changes fired before data has loaded
@@ -6545,17 +6564,46 @@ function collectData() {
   };
 }
 
+// ── SAVE-STATUS BANNER + BROWSER-LOCAL SAFETY NET ─────────────
+// If the server can't be reached (e.g. the .html was opened directly instead
+// of via the server), saving silently failed in the past and data was lost.
+// Now: (1) a loud red banner appears, and (2) every change is also mirrored to
+// this browser's localStorage (text only — screenshots are stripped to fit the
+// storage quota) so nothing is lost while the server is unavailable.
+function showSaveError() { const b = document.getElementById('save-status-banner'); if (b) b.style.display = 'flex'; }
+function clearSaveError() { const b = document.getElementById('save-status-banner'); if (b) b.style.display = 'none'; }
+
+function saveLocalBackup(data) {
+  try {
+    const stripImages = arr => (Array.isArray(arr) ? arr : []).map(t => { const c = Object.assign({}, t); delete c.images; return c; });
+    const lite = Object.assign({}, data, {
+      trades: stripImages(data.trades),
+      todTrades: stripImages(data.todTrades),
+      pbStore: {} // playbook gallery images are large — omit from the local text backup
+    });
+    localStorage.setItem('petesDashBackup', JSON.stringify({ ts: Date.now(), data: lite }));
+  } catch (e) { /* quota exceeded or storage unavailable — server is primary, ignore */ }
+}
+
 async function persistData() {
   if (!dataReady) { console.warn('Save skipped — data not loaded yet (safety guard).'); return; }
+  const payload = collectData();
+  saveLocalBackup(payload); // browser-local safety net (runs even with no server)
+  if (!serverAvailable) { showSaveError(); return; } // browser-only mode: kept in localStorage above
   try {
-    await fetch('/api/data', {
+    const r = await fetch('/api/data', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(collectData())
+      body: JSON.stringify(payload)
     });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const res = await r.json().catch(() => null);
+    if (res && res.ok === false) throw new Error('server blocked save: ' + (res.blocked || 'unknown'));
+    clearSaveError();
     rcMarkSaved();
   } catch(e) {
     console.warn('Save failed:', e);
+    showSaveError();
   }
 }
 
@@ -6756,9 +6804,38 @@ async function loadSavedData() {
     try { renderSessionPanel(); } catch(e) {} // populate the bottom-left session setups now trades exist
     console.log('✅ Dashboard data loaded from server.');
   } catch(e) {
-    // Load failed — keep dataReady FALSE so we never overwrite the server/cloud with a blank page.
-    console.warn('Could not load saved data (saving disabled to protect your data):', e);
+    // The server couldn't be reached (fetch threw) — almost always because the .html was
+    // opened directly instead of through the server. Enter BROWSER-ONLY mode: never POST to
+    // the server (so we can't overwrite server/cloud data), restore any browser-local backup,
+    // enable logging so the user isn't stuck, and show the loud "NOT SAVING" banner.
+    console.warn('Could not load from server — switching to browser-only mode:', e);
+    serverAvailable = false;
+    let restored = 0;
+    try { restored = restoreFromLocalBackup(); } catch(_) {}
+    dataReady = true; // allow logging; persistData() will save to localStorage only (serverAvailable is false)
+    showSaveError();
+    try { updateDailyStopBanner(); } catch(_) {}
+    try { renderSessionPanel(); } catch(_) {}
+    console.warn(restored
+      ? ('↩️ Restored ' + restored + ' trades from this browser\'s local backup (server offline). Screenshots are not included in the local backup.')
+      : '⚠️ No server and no local backup found — starting empty (browser-only).');
   }
+}
+
+// Restore the essential logged data from the browser-local backup written by saveLocalBackup().
+// Used only when the server is unreachable. Returns how many trade rows were restored.
+function restoreFromLocalBackup() {
+  const raw = localStorage.getItem('petesDashBackup');
+  if (!raw) return 0;
+  const parsed = JSON.parse(raw);
+  const d = (parsed && parsed.data) ? parsed.data : null;
+  if (!d) return 0;
+  if (Array.isArray(d.trades) && d.trades.length) { trades.push(...d.trades); try { renderTradeTable(); } catch(_){} }
+  if (Array.isArray(d.todTrades) && d.todTrades.length) { todTrades.push(...d.todTrades); try { renderTradesOfDay(); } catch(_){} }
+  if (Array.isArray(d.goals) && d.goals.length) { goals.push(...d.goals); if (d.nextGoalId) nextGoalId = d.nextGoalId; try { renderGoals(); } catch(_){} }
+  if (Array.isArray(d.masterMistakes) && d.masterMistakes.length) { masterMistakes.push(...d.masterMistakes); }
+  if (Array.isArray(d.newsList) && d.newsList.length) { newsList.push(...d.newsList); try { renderNewsTable(); } catch(_){} }
+  return (Array.isArray(d.trades) ? d.trades.length : 0) + (Array.isArray(d.todTrades) ? d.todTrades.length : 0);
 }
 
 // ── HOOK ALL SAVE FUNCTIONS ───────────────────────────────────
@@ -6906,7 +6983,10 @@ function flushSaveOnExit() {
   if (!dataReady) return; // never flush a blank page over saved data on close/refresh
   try {
     clearTimeout(_saveTimer);
-    const data = JSON.stringify(collectData());
+    const payload = collectData();
+    saveLocalBackup(payload); // always keep the browser-local safety net current on exit
+    if (!serverAvailable) return; // browser-only mode: nothing to send to the server
+    const data = JSON.stringify(payload);
     // sendBeacon is ideal but capped (~64KB); our payload includes images and is much larger,
     // so try beacon first and fall back to a synchronous XHR which reliably completes on unload.
     let beaconOk = false;
