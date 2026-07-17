@@ -39,7 +39,12 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } }); // 20MB max
 
-app.use(express.json({ limit: '50mb' }));
+// Saves send the ENTIRE dataset (all trades + their base64 screenshots) in one request.
+// That total had grown past the old 50mb cap, so adding an image made saves fail with
+// HTTP 413 (and the app showed the "NOT SAVING" banner). Raised to give lots of headroom.
+// NOTE: screenshots inline as base64 are what bloat this — a future improvement is to
+// store images as files via /api/upload-image so saves stay small.
+app.use(express.json({ limit: '512mb' }));
 app.use(express.static(__dirname));
 app.use('/data/images', express.static(IMAGES_DIR));
 
