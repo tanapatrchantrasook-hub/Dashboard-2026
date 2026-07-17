@@ -134,6 +134,36 @@ app.get('/api/data', async (req, res) => {
 
 // Save all data (bulk save) — local file immediately, cloud push coalesced
 const _count = d => (d ? ((d.trades||[]).length + (d.todTrades||[]).length) : 0);
+
+// ── AUTOMATIC ROLLING BACKUPS ─────────────────────────────────
+// Timestamped local backups had stopped in June, leaving no recovery history.
+// These are written automatically (throttled) and pruned to the most recent N,
+// so there is always a trail to restore from. Auto-backups use a distinct prefix
+// so pruning never touches manually-named backups (SAFE_, RESTORED_, etc.).
+const ROLLING_PREFIX = 'dashboard-data_auto_';
+const ROLLING_KEEP = 40;                        // keep the most recent N auto-backups
+const ROLLING_THROTTLE_MS = 30 * 60 * 1000;     // at most one every 30 minutes
+const SHRINK_THRESHOLD = 3;                      // a bigger single-save drop gets its own snapshot
+let _lastRollingBackup = 0;
+const _pad2 = n => String(n).padStart(2, '0');
+function _stamp() {
+  const d = new Date();
+  return d.getFullYear() + _pad2(d.getMonth()+1) + _pad2(d.getDate()) + '_' +
+         _pad2(d.getHours()) + _pad2(d.getMinutes()) + _pad2(d.getSeconds());
+}
+function writeRollingBackup(data, bdir) {
+  try {
+    const now = Date.now();
+    if (now - _lastRollingBackup < ROLLING_THROTTLE_MS) return;
+    _lastRollingBackup = now;
+    fs.writeFileSync(path.join(bdir, ROLLING_PREFIX + _stamp() + '.json'), JSON.stringify(data));
+    const files = fs.readdirSync(bdir).filter(f => f.startsWith(ROLLING_PREFIX)).sort();
+    if (files.length > ROLLING_KEEP) {
+      files.slice(0, files.length - ROLLING_KEEP).forEach(f => { try { fs.unlinkSync(path.join(bdir, f)); } catch(_){} });
+    }
+  } catch (e) { /* backups are best-effort; never block a save on them */ }
+}
+
 app.post('/api/data', async (req, res) => {
   const current = readData();
   const updated = { ...current, ...req.body };
@@ -147,14 +177,25 @@ app.post('/api/data', async (req, res) => {
     return res.json({ ok: false, blocked: 'empty-overwrite' });
   }
 
+  const bdir = path.join(__dirname, 'backups');
+  try { if (!fs.existsSync(bdir)) fs.mkdirSync(bdir); } catch (e) { /* ignore */ }
+
   // Keep a one-step "last good" backup of the previous non-empty state before overwriting.
   try {
     if (_count(current) > 0) {
-      const bdir = path.join(__dirname, 'backups');
-      if (!fs.existsSync(bdir)) fs.mkdirSync(bdir);
       fs.writeFileSync(path.join(bdir, 'dashboard-data.lastgood.json'), JSON.stringify(current));
     }
   } catch (e) { /* backup is best-effort; never block a save on it */ }
+
+  // A big single-save drop in trade count is unusual (a stale copy overwriting a fuller one).
+  // Deletes are still allowed, but snapshot the prior state first so it is always recoverable.
+  if (_count(current) - _count(updated) > SHRINK_THRESHOLD) {
+    try { fs.writeFileSync(path.join(bdir, 'dashboard-data_preshrink_' + _stamp() + '.json'), JSON.stringify(current)); } catch (e) { /* ignore */ }
+    console.warn('⚠️  Large trade-count drop on save (' + _count(current) + ' → ' + _count(updated) + ' trades). Prior state snapshotted (preshrink backup).');
+  }
+
+  // Automatic rolling history (throttled + pruned).
+  if (_count(updated) > 0) writeRollingBackup(updated, bdir);
 
   writeData(updated);
   if (SUPA) scheduleCloudSave(updated);
