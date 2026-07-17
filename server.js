@@ -134,6 +134,36 @@ app.get('/api/data', async (req, res) => {
 
 // Save all data (bulk save) — local file immediately, cloud push coalesced
 const _count = d => (d ? ((d.trades||[]).length + (d.todTrades||[]).length) : 0);
+
+// ── AUTOMATIC ROLLING BACKUPS ─────────────────────────────────
+// Timestamped local backups had stopped in June, leaving no recovery history.
+// These are written automatically (throttled) and pruned to the most recent N,
+// so there is always a trail to restore from. Auto-backups use a distinct prefix
+// so pruning never touches manually-named backups (SAFE_, RESTORED_, etc.).
+const ROLLING_PREFIX = 'dashboard-data_auto_';
+const ROLLING_KEEP = 40;                        // keep the most recent N auto-backups
+const ROLLING_THROTTLE_MS = 30 * 60 * 1000;     // at most one every 30 minutes
+const SHRINK_THRESHOLD = 3;                      // a bigger single-save drop gets its own snapshot
+let _lastRollingBackup = 0;
+const _pad2 = n => String(n).padStart(2, '0');
+function _stamp() {
+  const d = new Date();
+  return d.getFullYear() + _pad2(d.getMonth()+1) + _pad2(d.getDate()) + '_' +
+         _pad2(d.getHours()) + _pad2(d.getMinutes()) + _pad2(d.getSeconds());
+}
+function writeRollingBackup(data, bdir) {
+  try {
+    const now = Date.now();
+    if (now - _lastRollingBackup < ROLLING_THROTTLE_MS) return;
+    _lastRollingBackup = now;
+    fs.writeFileSync(path.join(bdir, ROLLING_PREFIX + _stamp() + '.json'), JSON.stringify(data));
+    const files = fs.readdirSync(bdir).filter(f => f.startsWith(ROLLING_PREFIX)).sort();
+    if (files.length > ROLLING_KEEP) {
+      files.slice(0, files.length - ROLLING_KEEP).forEach(f => { try { fs.unlinkSync(path.join(bdir, f)); } catch(_){} });
+    }
+  } catch (e) { /* backups are best-effort; never block a save on them */ }
+}
+
 app.post('/api/data', async (req, res) => {
   const current = readData();
   const updated = { ...current, ...req.body };
@@ -147,14 +177,25 @@ app.post('/api/data', async (req, res) => {
     return res.json({ ok: false, blocked: 'empty-overwrite' });
   }
 
+  const bdir = path.join(__dirname, 'backups');
+  try { if (!fs.existsSync(bdir)) fs.mkdirSync(bdir); } catch (e) { /* ignore */ }
+
   // Keep a one-step "last good" backup of the previous non-empty state before overwriting.
   try {
     if (_count(current) > 0) {
-      const bdir = path.join(__dirname, 'backups');
-      if (!fs.existsSync(bdir)) fs.mkdirSync(bdir);
       fs.writeFileSync(path.join(bdir, 'dashboard-data.lastgood.json'), JSON.stringify(current));
     }
   } catch (e) { /* backup is best-effort; never block a save on it */ }
+
+  // A big single-save drop in trade count is unusual (a stale copy overwriting a fuller one).
+  // Deletes are still allowed, but snapshot the prior state first so it is always recoverable.
+  if (_count(current) - _count(updated) > SHRINK_THRESHOLD) {
+    try { fs.writeFileSync(path.join(bdir, 'dashboard-data_preshrink_' + _stamp() + '.json'), JSON.stringify(current)); } catch (e) { /* ignore */ }
+    console.warn('⚠️  Large trade-count drop on save (' + _count(current) + ' → ' + _count(updated) + ' trades). Prior state snapshotted (preshrink backup).');
+  }
+
+  // Automatic rolling history (throttled + pruned).
+  if (_count(updated) > 0) writeRollingBackup(updated, bdir);
 
   writeData(updated);
   if (SUPA) scheduleCloudSave(updated);
@@ -162,175 +203,236 @@ app.post('/api/data', async (req, res) => {
 });
 
 // ── STOCK SCREENER QUOTE (Yahoo Finance proxy) ────────────────
-// Returns { symbol, price, avgVol, curVol } for the screener.
+// Returns { symbol, price, avgVol, curVol, prevClose, volSeries } for the screener.
+// The data source is isolated here so it can be swapped for a paid API later
+// (Finnhub/Polygon) without touching the frontend.
 const TF_MAP = {
+  '1m':  { interval: '1m',  range: '5d' },
   '5m':  { interval: '5m',  range: '1mo' },
+  '15m': { interval: '15m', range: '1mo' },
   '30m': { interval: '30m', range: '1mo' },
   '60m': { interval: '60m', range: '3mo' },
+  '2h':  { interval: '60m', range: '6mo', group: 2 },   // Yahoo has no native 2h — resample 60m
+  '4h':  { interval: '60m', range: '1y',  group: 4 },   // ...and 4h from 60m
   '1d':  { interval: '1d',  range: '3mo' }
 };
-async function yfChart(symbol, interval, range) {
-  const url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(symbol)
-            + '?interval=' + interval + '&range=' + range;
-  const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-  if (!r.ok) return null;
-  const j = await r.json();
-  return (j.chart && j.chart.result && j.chart.result[0]) || null;
+// Resample close/volume arrays into buckets of `g` consecutive bars (close=last, volume=sum)
+function _resampleCV(closes, vols, g) {
+  const oc = [], ov = [];
+  for (let i = 0; i < closes.length; i += g) {
+    let vol = 0, last = null, any = false;
+    for (let j = i; j < Math.min(i + g, closes.length); j++) { if (vols[j] != null) vol += vols[j]; if (closes[j] != null) { last = closes[j]; any = true; } }
+    if (any) { oc.push(last); ov.push(vol); }
+  }
+  return { closes: oc, vols: ov };
+}
+// ── Market Cap via Yahoo's authenticated quote (cookie + crumb) ──
+// Unofficial/free; degrades to null (shows "—") if Yahoo blocks it. Swap for a
+// keyed provider (Finnhub /stock/profile2 marketCapitalization) for guaranteed data.
+const YUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36';
+let _yCookie = '', _yCrumb = '', _yAuthTs = 0;
+// Obtain a fresh Yahoo cookie + crumb. `force` skips the 30-min cache (used to
+// self-heal when a cached crumb has gone stale and v7 starts returning 401).
+async function _yahooAuth(force) {
+  if (!force && _yCrumb && Date.now() - _yAuthTs < 30 * 60 * 1000) return true;
+  // A cookie can come from any of these hosts — fc.yahoo.com is flaky, so fall back.
+  let cookie = '';
+  for (const src of ['https://fc.yahoo.com/', 'https://finance.yahoo.com/', 'https://login.yahoo.com/']) {
+    try {
+      const r1 = await fetch(src, { headers: { 'User-Agent': YUA } });
+      const sc = (typeof r1.headers.getSetCookie === 'function') ? r1.headers.getSetCookie() : [];
+      if (sc.length) { cookie = sc.map(c => c.split(';')[0]).join('; '); break; }
+    } catch (e) { /* try next source */ }
+  }
+  if (!cookie) return false;
+  for (const host of ['query1.finance.yahoo.com', 'query2.finance.yahoo.com']) {
+    try {
+      const r2 = await fetch(`https://${host}/v1/test/getcrumb`, { headers: { 'User-Agent': YUA, 'Cookie': cookie } });
+      const crumb = (await r2.text()).trim();
+      if (crumb && crumb.length < 30 && !crumb.includes('<')) { _yCookie = cookie; _yCrumb = crumb; _yAuthTs = Date.now(); return true; }
+    } catch (e) { /* try next host */ }
+  }
+  return false;
+}
+// Per-symbol v7-quote cache. One v7 call gives us BOTH market cap and the
+// extended-hours change fields, so we fetch it once and share. Successes cached
+// 30s (keeps the extended-hours % fresh for the ~45s auto-refresh); a null
+// (blocked) cached 60s so we retry soon without hammering Yahoo.
+const _v7Cache = {}; // SYMBOL -> { q: object|null, ts }
+async function fetchV7Quote(symbol) {
+  const c = _v7Cache[symbol];
+  if (c) {
+    const ttl = (c.q != null) ? 30 * 1000 : 60 * 1000;
+    if (Date.now() - c.ts < ttl) return c.q;
+  }
+  let q = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (!(await _yahooAuth(attempt === 1))) break;       // force a fresh auth on the retry
+    try {
+      const url = 'https://query1.finance.yahoo.com/v7/finance/quote?symbols=' + encodeURIComponent(symbol) + '&crumb=' + encodeURIComponent(_yCrumb);
+      const r = await fetch(url, { headers: { 'User-Agent': YUA, 'Cookie': _yCookie } });
+      if (r.ok) {
+        const j = await r.json();
+        q = (j.quoteResponse && j.quoteResponse.result && j.quoteResponse.result[0]) || null;
+        break;                                            // got a valid response
+      }
+      _yCrumb = ''; _yCookie = '';                        // stale crumb (e.g. 401) -> force re-auth & retry
+    } catch (e) { _yCrumb = ''; _yCookie = ''; }
+  }
+  _v7Cache[symbol] = { q, ts: Date.now() };
+  return q;
+}
+function _mcapOf(q) { return q && typeof q.marketCap === 'number' ? q.marketCap : null; }
+async function fetchMarketCap(symbol) { return _mcapOf(await fetchV7Quote(symbol)); }
+// Extended-hours-aware % change vs the regular close, derived from a v7 quote.
+function extChange(q) {
+  if (!q) return null;
+  const st = q.marketState || '';
+  const reg  = (typeof q.regularMarketChangePercent === 'number') ? q.regularMarketChangePercent : null;
+  const pre  = (typeof q.preMarketChangePercent === 'number') ? q.preMarketChangePercent : null;
+  const post = (typeof q.postMarketChangePercent === 'number') ? q.postMarketChangePercent : null;
+  if ((st === 'PRE' || st === 'PREPRE') && pre != null) return { changePct: pre, phase: 'pre' };
+  if ((st === 'POST' || st === 'POSTPOST' || st === 'CLOSED') && post != null) return { changePct: post, phase: 'post' };
+  if (reg != null) return { changePct: reg, phase: 'regular' };
+  return null;
+}
+// Extended-hours-aware CURRENT price (pre-market / after-hours / regular) from a v7 quote.
+function extPrice(q) {
+  if (!q) return null;
+  const st = q.marketState || '';
+  const reg = (typeof q.regularMarketPrice === 'number') ? q.regularMarketPrice : null;
+  const pre = (typeof q.preMarketPrice === 'number') ? q.preMarketPrice : null;
+  const post = (typeof q.postMarketPrice === 'number') ? q.postMarketPrice : null;
+  if ((st === 'PRE' || st === 'PREPRE') && pre != null) return { price: pre, phase: 'pre' };
+  if ((st === 'POST' || st === 'POSTPOST' || st === 'CLOSED') && post != null) return { price: post, phase: 'post' };
+  if (reg != null) return { price: reg, phase: 'regular' };
+  return null;
 }
 
-// ── Yahoo authenticated quote (for market cap) — cookie + crumb, cached ~30 min ──
-// Best-effort: if any step fails, callers fall back to marketCap = null.
-let _yfAuth = { cookie: null, crumb: null, ts: 0 };
-const YF_AUTH_TTL = 30 * 60 * 1000;
-async function yfAuth() {
-  if (_yfAuth.crumb && (Date.now() - _yfAuth.ts) < YF_AUTH_TTL) return _yfAuth;
-  // 1) hit fc.yahoo.com to obtain session cookies
-  const r1 = await fetch('https://fc.yahoo.com/', { headers: { 'User-Agent': 'Mozilla/5.0' } });
-  let cookies = [];
-  if (typeof r1.headers.getSetCookie === 'function') cookies = r1.headers.getSetCookie();
-  else if (r1.headers.get('set-cookie')) cookies = [r1.headers.get('set-cookie')];
-  const cookie = cookies.map(c => c.split(';')[0]).join('; ');
-  // 2) exchange the cookies for a crumb
-  const r2 = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
-    headers: { 'User-Agent': 'Mozilla/5.0', 'Cookie': cookie }
-  });
-  const crumb = (await r2.text()).trim();
-  _yfAuth = { cookie, crumb, ts: Date.now() };
-  return _yfAuth;
+// ── Average daily $ volume over the last 20 trading days (volume × close) ──
+function _avg20dFrom(vols, closes) {
+  const pairs = [];
+  for (let i = 0; i < vols.length; i++) {
+    if (vols[i] != null && closes[i] != null && vols[i] > 0) pairs.push(vols[i] * closes[i]);
+  }
+  const last20 = pairs.slice(-20);
+  if (!last20.length) return null;
+  return Math.round(last20.reduce((a, b) => a + b, 0) / last20.length);
 }
-// Authenticated v7 quote → { marketCap, marketState, regularChg, preChg, postChg } (best-effort, null on failure).
-// Carries the pre/post-market change so the screener can show an extended-hours % change.
-async function yfQuoteInfo(symbol) {
+async function fetch20dAvgDollar(symbol) {
   try {
-    const { cookie, crumb } = await yfAuth();
-    if (!crumb) return null;
-    const url = 'https://query1.finance.yahoo.com/v7/finance/quote?symbols=' + encodeURIComponent(symbol)
-              + '&crumb=' + encodeURIComponent(crumb);
-    const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Cookie': cookie } });
+    const url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(symbol) + '?interval=1d&range=2mo';
+    const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
     if (!r.ok) return null;
     const j = await r.json();
-    const q = j && j.quoteResponse && j.quoteResponse.result && j.quoteResponse.result[0];
-    if (!q) return null;
-    const num = x => (typeof x === 'number' && isFinite(x)) ? x : null;
-    return {
-      marketCap: num(q.marketCap),
-      marketState: q.marketState || '',
-      regularChg: num(q.regularMarketChangePercent),
-      preChg: num(q.preMarketChangePercent),
-      postChg: num(q.postMarketChangePercent)
-    };
+    const res = j.chart && j.chart.result && j.chart.result[0];
+    if (!res) return null;
+    const q = (res.indicators && res.indicators.quote && res.indicators.quote[0]) || {};
+    return _avg20dFrom(q.volume || [], q.close || []);
   } catch (e) { return null; }
-}
-// Extended-hours-aware % change vs the regular close: pre-market in PRE, post-market in POST/CLOSED, else regular.
-function pickChangePct(info) {
-  if (!info) return { changePct: null, phase: 'regular' };
-  const st = (info.marketState || '').toUpperCase();
-  if ((st === 'PRE' || st === 'PREPRE') && info.preChg != null) return { changePct: info.preChg, phase: 'pre' };
-  if ((st === 'POST' || st === 'POSTPOST' || st === 'CLOSED') && info.postChg != null) return { changePct: info.postChg, phase: 'post' };
-  return { changePct: info.regularChg, phase: 'regular' };
-}
-
-// Daily {t, c, v} bars (non-null) from a daily chart result.
-function dailyBars(dailyRes) {
-  if (!dailyRes) return [];
-  const q = (dailyRes.indicators && dailyRes.indicators.quote && dailyRes.indicators.quote[0]) || {};
-  const ts = dailyRes.timestamp || [];
-  const cl = q.close || [], vl = q.volume || [];
-  return ts.map((t, i) => ({ t, c: cl[i], v: vl[i] })).filter(x => x.c != null && x.v != null);
-}
-// Average daily $ volume over the 20 daily bars ending at endIdx (inclusive; default = last bar).
-function avgDollar20(bars, endIdx) {
-  const end = (endIdx == null) ? bars.length - 1 : endIdx;
-  const start = Math.max(0, end - 19);
-  const slice = bars.slice(start, end + 1);
-  if (!slice.length) return null;
-  return Math.round(slice.reduce((a, b) => a + (b.v * b.c), 0) / slice.length);
 }
 
 async function fetchQuote(symbol, tf) {
   const cfg = TF_MAP[tf] || TF_MAP['1d'];
-  const isIntraday = !!(tf && tf !== '1d');
-  // selected-timeframe chart (price/volumes/sparkline), a daily chart for the 20-day $ avg
-  // (reuse the timeframe chart when tf is already daily), and the market cap (best-effort).
-  const [tfRes, dailyExtra, info] = await Promise.all([
-    yfChart(symbol, cfg.interval, cfg.range),
-    (tf === '1d') ? Promise.resolve(null) : yfChart(symbol, '1d', '2mo'),
-    yfQuoteInfo(symbol)
-  ]);
-  const mcap = info ? info.marketCap : null;
-  if (!tfRes) return { symbol, error: 'no data' };
-  const meta = tfRes.meta || {};
-  const q = (tfRes.indicators && tfRes.indicators.quote && tfRes.indicators.quote[0]) || {};
-  const volumes = (q.volume || []).filter(v => v != null && v > 0);
+  const url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(symbol) + '?interval=' + cfg.interval + '&range=' + cfg.range;
+  const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+  if (!r.ok) return { symbol, error: 'HTTP ' + r.status };
+  const j = await r.json();
+  const res = j.chart && j.chart.result && j.chart.result[0];
+  if (!res) return { symbol, error: (j.chart && j.chart.error && j.chart.error.description) || 'no data' };
+  const meta = res.meta || {};
+  const q = (res.indicators && res.indicators.quote && res.indicators.quote[0]) || {};
+  if (cfg.group && cfg.group > 1) { const rs = _resampleCV(q.close || [], q.volume || [], cfg.group); q.close = rs.closes; q.volume = rs.vols; }
+  const vols = (q.volume || []).filter(v => v != null && v > 0);
   const closes = (q.close || []).filter(c => c != null);
-  const price = (meta.regularMarketPrice != null) ? meta.regularMarketPrice
-              : (closes.length ? closes[closes.length - 1] : 0);
-  const curVol = isIntraday ? (volumes.length ? volumes[volumes.length - 1] : 0)
-                            : (meta.regularMarketVolume != null ? meta.regularMarketVolume
-                               : (volumes.length ? volumes[volumes.length - 1] : 0));
-  const hist = volumes.slice(0, -1); // exclude the current/forming bar
-  const avgVol = hist.length ? Math.round(hist.reduce((a, b) => a + b, 0) / hist.length) : 0;
-  const volSeries = volumes.slice(-40);
-  const dayVol = (meta.regularMarketVolume != null) ? meta.regularMarketVolume : curVol;
-  // prevClose: daily → second-to-last daily close; intraday → meta.previousClose / chartPreviousClose
-  let prevClose = 0;
-  if (tf === '1d') {
-    prevClose = closes.length >= 2 ? closes[closes.length - 2] : (closes[0] || 0);
+  const price = meta.regularMarketPrice || (closes.length ? closes[closes.length - 1] : 0);
+  let curVol;
+  if (tf && tf !== '1d') {
+    curVol = vols.length ? vols[vols.length - 1] : 0;      // intraday: latest bar's volume
   } else {
-    prevClose = (meta.previousClose != null) ? meta.previousClose
-              : (meta.chartPreviousClose != null ? meta.chartPreviousClose : 0);
+    curVol = meta.regularMarketVolume || (vols.length ? vols[vols.length - 1] : 0); // daily: today's full volume
   }
-  const bars = dailyBars(tf === '1d' ? tfRes : dailyExtra);
-  const avgDollar20d = bars.length ? avgDollar20(bars) : null;
-  // Extended-hours-aware % change (falls back to a chart-derived regular change if v7 is unavailable).
-  let { changePct, phase } = pickChangePct(info);
-  if (changePct == null && prevClose) { changePct = ((price - prevClose) / prevClose) * 100; phase = 'regular'; }
-  // Regular-session % change vs prior close (price = regularMarketPrice, so this stays "regular" even after hours).
-  const regularChangePct = (info && info.regularChg != null) ? info.regularChg
-                         : (prevClose ? ((price - prevClose) / prevClose) * 100 : null);
-  return { symbol, price, avgVol, curVol, prevClose, volSeries, dayVol, avgDollar20d, marketCap: mcap, changePct, phase, regularChangePct, tf: tf || '1d' };
-}
-
-// Pick the Yahoo daily range wide enough to include the requested historical date.
-function rangeForDate(dateStr) {
-  const days = (Date.now() - new Date(dateStr + 'T00:00:00Z').getTime()) / 86400000;
-  if (days <= 180) return '6mo';
-  if (days <= 365) return '1y';
-  if (days <= 730) return '2y';
-  if (days <= 1825) return '5y';
-  return '10y';
-}
-async function fetchQuoteHistorical(symbol, dateStr) {
-  const [dailyRes, infoNow] = await Promise.all([
-    yfChart(symbol, '1d', rangeForDate(dateStr)),
-    yfQuoteInfo(symbol)
+  const hist = vols.slice(0, -1);                          // average of prior bars (exclude the current bar)
+  const avgVol = hist.length ? Math.round(hist.reduce((a, b) => a + b, 0) / hist.length) : 0;
+  // Previous-day close. For the daily chart it's the close before the latest bar (reliable);
+  // for intraday charts use the prior regular-session close from meta.
+  let prevClose;
+  if (tf && tf !== '1d') {
+    prevClose = (meta.previousClose != null ? meta.previousClose : meta.chartPreviousClose) || 0;
+  } else {
+    prevClose = closes.length >= 2 ? closes[closes.length - 2] : (meta.previousClose || meta.chartPreviousClose || 0);
+  }
+  const volSeries = vols.slice(-40);                        // recent bars for a small volume sparkline
+  // Full-day total shares traded today (consistent across timeframes) — for "Vol Traded ($)".
+  const dayVol = meta.regularMarketVolume || curVol || 0;
+  // One authenticated v7 quote gives market cap + extended-hours change; fetch it
+  // alongside the 20-day avg daily $ volume. On the daily timeframe we already have
+  // daily bars, so reuse them (no extra request).
+  const [v7, avgDollar20d] = await Promise.all([
+    fetchV7Quote(symbol),
+    (tf === '1d') ? Promise.resolve(_avg20dFrom(q.volume || [], q.close || [])) : fetch20dAvgDollar(symbol)
   ]);
-  const mcapNow = infoNow ? infoNow.marketCap : null;
-  if (!dailyRes) return { symbol, error: 'no data' };
-  const bars = dailyBars(dailyRes);
-  if (!bars.length) return { symbol, error: 'no data' };
-  // last bar with timestamp <= end of the selected day (snaps weekends/holidays to prior trading day)
-  const endOfDay = Math.floor(new Date(dateStr + 'T23:59:59Z').getTime() / 1000);
+  const marketCap = _mcapOf(v7);
+  // Extended-hours-aware % change; fall back to a chart-derived regular change.
+  const ext = extChange(v7) || { changePct: (prevClose ? ((price - prevClose) / prevClose) * 100 : null), phase: 'regular' };
+  // Previous trading day's $ volume (daily bars only) — lets "Vol Traded ($)" colour green/red
+  // vs the prior day immediately, instead of waiting for a tick-to-tick comparison.
+  let prevDayDollar = null;
+  if (!tf || tf === '1d') {
+    const rv = q.volume || [], rc = q.close || [];
+    let seen = 0;
+    for (let i = rv.length - 1; i >= 0; i--) {
+      if (rv[i] != null && rc[i] != null && rv[i] > 0) { seen++; if (seen === 2) { prevDayDollar = rv[i] * rc[i]; break; } }
+    }
+  }
+  return { symbol, price, avgVol, curVol, prevClose, volSeries, dayVol, marketCap, avgDollar20d, prevDayDollar, changePct: ext.changePct, phase: ext.phase, tf: tf || '1d' };
+}
+// ── HISTORICAL DAILY SNAPSHOT (as-of a prior date) ────────────
+// Returns the same shape as fetchQuote but computed from the daily bar for the
+// selected date (snaps to the prior trading day on weekends/holidays). Market cap
+// is approximate: current shares (current marketCap / latest close) × that day's close.
+async function fetchHistoricalQuote(symbol, dateStr) {
+  const target = Math.floor(new Date(dateStr + 'T23:59:59Z').getTime() / 1000); // end of the selected day, UTC
+  const ageDays = (Date.now() / 1000 - target) / 86400;
+  let range = '6mo';
+  if (ageDays > 1700) range = '10y'; else if (ageDays > 700) range = '5y';
+  else if (ageDays > 330) range = '2y'; else if (ageDays > 150) range = '1y';
+  const url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(symbol) + '?interval=1d&range=' + range;
+  const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+  if (!r.ok) return { symbol, error: 'HTTP ' + r.status };
+  const j = await r.json();
+  const res = j.chart && j.chart.result && j.chart.result[0];
+  if (!res) return { symbol, error: (j.chart && j.chart.error && j.chart.error.description) || 'no data' };
+  const ts = res.timestamp || [];
+  const q = (res.indicators && res.indicators.quote && res.indicators.quote[0]) || {};
+  const rc = q.close || [], rv = q.volume || [];
+  const bars = [];
+  for (let i = 0; i < ts.length; i++) {
+    if (rc[i] != null && rv[i] != null && rv[i] > 0) bars.push({ ts: ts[i], close: rc[i], vol: rv[i] });
+  }
+  if (!bars.length) return { symbol, error: 'no daily data' };
+  // last bar at/before the end of the selected day → snaps to prior trading day
   let idx = -1;
-  for (let i = 0; i < bars.length; i++) { if (bars[i].t <= endOfDay) idx = i; else break; }
-  if (idx < 0) return { symbol, error: 'no data for date' };
-  const bar = bars[idx];
-  const prev = idx > 0 ? bars[idx - 1] : null;
-  const price = bar.c;
-  const curVol = bar.v, dayVol = bar.v;
-  const prevClose = prev ? prev.c : 0;
-  const avgDollar20d = avgDollar20(bars, idx);
-  // avgVol = mean volume of the ~20 bars BEFORE that date (for RVOL)
-  const before = bars.slice(Math.max(0, idx - 20), idx);
-  const avgVol = before.length ? Math.round(before.reduce((a, b) => a + b.v, 0) / before.length) : 0;
-  const volSeries = bars.slice(Math.max(0, idx - 39), idx + 1).map(b => b.v);
-  const asOf = new Date(bar.t * 1000).toISOString().slice(0, 10);
-  // marketCap: scale current cap by (that day's close / latest close)
-  let marketCap = null, mktCapApprox = false;
-  const latestClose = bars[bars.length - 1].c;
-  if (mcapNow != null && latestClose) { marketCap = Math.round(mcapNow / latestClose * bar.c); mktCapApprox = true; }
-  const changePct = prevClose ? ((bar.c - prevClose) / prevClose) * 100 : null;
-  return { symbol, price, avgVol, curVol, prevClose, volSeries, dayVol, avgDollar20d, marketCap, mktCapApprox, asOf, changePct, phase: 'regular', regularChangePct: changePct, tf: 'historical' };
+  for (let i = 0; i < bars.length; i++) { if (bars[i].ts <= target) idx = i; }
+  if (idx < 0) return { symbol, error: 'no data on/before ' + dateStr };
+  const b = bars[idx];
+  const price = b.close, curVol = b.vol, dayVol = b.vol;
+  const prevClose = idx > 0 ? bars[idx - 1].close : 0;
+  const win = bars.slice(Math.max(0, idx - 19), idx + 1);            // up to 20 bars ending on the date
+  const avgDollar20d = win.length ? Math.round(win.reduce((a, x) => a + x.vol * x.close, 0) / win.length) : null;
+  const prior = bars.slice(Math.max(0, idx - 20), idx);             // ~20 bars before the date (for RVOL)
+  const avgVol = prior.length ? Math.round(prior.reduce((a, x) => a + x.vol, 0) / prior.length) : 0;
+  const volSeries = bars.slice(Math.max(0, idx - 39), idx + 1).map(x => x.vol);
+  const asOf = new Date(b.ts * 1000).toISOString().slice(0, 10);
+  // Approximate market cap as of the date: current shares × that day's close.
+  let marketCap = null;
+  try {
+    const curMcap = await fetchMarketCap(symbol);
+    const latestClose = bars[bars.length - 1].close;
+    if (curMcap && latestClose) marketCap = Math.round((curMcap / latestClose) * b.close);
+  } catch (e) { /* leave null */ }
+  const changePct = prevClose ? ((b.close - prevClose) / prevClose) * 100 : null;
+  return { symbol, price, avgVol, curVol, prevClose, volSeries, dayVol, marketCap, mktCapApprox: marketCap != null, avgDollar20d, changePct, phase: 'regular', asOf, tf: '1d' };
 }
 
 app.get('/api/quote', async (req, res) => {
@@ -339,9 +441,143 @@ app.get('/api/quote', async (req, res) => {
   const date = (req.query.date || '').trim();
   if (!symbol) return res.status(400).json({ error: 'no symbol' });
   try {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) res.json(await fetchQuoteHistorical(symbol, date));
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) res.json(await fetchHistoricalQuote(symbol, date));
     else res.json(await fetchQuote(symbol, tf));
-  } catch (e) { res.json({ symbol, error: e.message }); }
+  }
+  catch (e) { res.json({ symbol, error: e.message }); }
+});
+
+// ── IN-PLAY UPTREND SCAN: trend / relative-strength / composite score ─────────
+// Pulls 1y of daily bars per symbol and computes the moving-average stack, ADX,
+// 52-week-high proximity, relative strength vs SPY, and a 0–100 "In-Play" score.
+function _smaLast(a, n) { if (a.length < n) return null; let s = 0; for (let i = a.length - n; i < a.length; i++) s += a[i]; return s / n; }
+function _emaLast(a, n) { if (a.length < n) return null; const k = 2 / (n + 1); let e = 0; for (let i = 0; i < n; i++) e += a[i]; e /= n; for (let i = n; i < a.length; i++) e = a[i] * k + e * (1 - k); return e; }
+function _clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+// Wilder ADX(14) → { adx, plusDI, minusDI }
+function _adx(H, L, C, n) {
+  if (H.length < 2 * n + 2) return { adx: null, plusDI: 0, minusDI: 0 };
+  let trS = 0, pdmS = 0, mdmS = 0;
+  for (let i = 1; i <= n; i++) {
+    const tr = Math.max(H[i] - L[i], Math.abs(H[i] - C[i - 1]), Math.abs(L[i] - C[i - 1]));
+    const up = H[i] - H[i - 1], dn = L[i - 1] - L[i];
+    trS += tr; pdmS += (up > dn && up > 0) ? up : 0; mdmS += (dn > up && dn > 0) ? dn : 0;
+  }
+  const dxs = []; let pDI = 0, mDI = 0;
+  for (let i = n + 1; i < H.length; i++) {
+    const tr = Math.max(H[i] - L[i], Math.abs(H[i] - C[i - 1]), Math.abs(L[i] - C[i - 1]));
+    const up = H[i] - H[i - 1], dn = L[i - 1] - L[i];
+    trS = trS - trS / n + tr;
+    pdmS = pdmS - pdmS / n + ((up > dn && up > 0) ? up : 0);
+    mdmS = mdmS - mdmS / n + ((dn > up && dn > 0) ? dn : 0);
+    pDI = trS ? 100 * pdmS / trS : 0; mDI = trS ? 100 * mdmS / trS : 0;
+    dxs.push((pDI + mDI) ? 100 * Math.abs(pDI - mDI) / (pDI + mDI) : 0);
+  }
+  if (dxs.length < n) return { adx: null, plusDI: pDI, minusDI: mDI };
+  let adx = 0; for (let i = 0; i < n; i++) adx += dxs[i]; adx /= n;
+  for (let i = n; i < dxs.length; i++) adx = (adx * (n - 1) + dxs[i]) / n;
+  return { adx, plusDI: pDI, minusDI: mDI };
+}
+// Per-timeframe scan config. range gives enough bars for SMA100; momFull scales the
+// momentum threshold to the bar size; rsN = relative-strength lookback (in bars).
+const SCAN_TF = {
+  '1m':  { interval: '1m',  range: '5d',  group: 1, momFull: 1,   rsN: 20 },
+  '5m':  { interval: '5m',  range: '5d',  group: 1, momFull: 1.5, rsN: 20 },
+  '15m': { interval: '15m', range: '1mo', group: 1, momFull: 2,   rsN: 20 },
+  '30m': { interval: '30m', range: '1mo', group: 1, momFull: 2.5, rsN: 20 },
+  '60m': { interval: '60m', range: '3mo', group: 1, momFull: 3,   rsN: 30 },
+  '2h':  { interval: '60m', range: '6mo', group: 2, momFull: 3.5, rsN: 30 },
+  '4h':  { interval: '60m', range: '1y',  group: 4, momFull: 4,   rsN: 30 },
+  '1d':  { interval: '1d',  range: '1y',  group: 1, momFull: 5,   rsN: 63 }
+};
+function _resampleBars(H, L, C, V, g) {
+  if (g <= 1) return { H, L, C, V };
+  const oH = [], oL = [], oC = [], oV = [];
+  for (let i = 0; i < C.length; i += g) {
+    let hi = -Infinity, lo = Infinity, vol = 0, lc = null, any = false;
+    for (let j = i; j < Math.min(i + g, C.length); j++) { if (H[j] > hi) hi = H[j]; if (L[j] < lo) lo = L[j]; vol += V[j]; lc = C[j]; any = true; }
+    if (any) { oH.push(hi); oL.push(lo); oC.push(lc); oV.push(vol); }
+  }
+  return { H: oH, L: oL, C: oC, V: oV };
+}
+async function _fetchBars(symbol, cfg) {
+  const url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(symbol) + '?interval=' + cfg.interval + '&range=' + cfg.range;
+  const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const j = await r.json();
+  const res = j.chart && j.chart.result && j.chart.result[0];
+  if (!res) throw new Error('no data');
+  const meta = res.meta || {}, q = (res.indicators && res.indicators.quote && res.indicators.quote[0]) || {};
+  const ts = res.timestamp || [], rc = q.close || [], rh = q.high || [], rl = q.low || [], rv = q.volume || [];
+  let H = [], L = [], C = [], V = [];
+  for (let i = 0; i < ts.length; i++) { if (rc[i] != null && rh[i] != null && rl[i] != null) { H.push(rh[i]); L.push(rl[i]); C.push(rc[i]); V.push(rv[i] || 0); } }
+  if (cfg.group > 1) { const g = _resampleBars(H, L, C, V, cfg.group); H = g.H; L = g.L; C = g.C; V = g.V; }
+  return { meta, H, L, C, V };
+}
+const _benchCache = {};
+async function _benchRet(sym, cfg) {
+  const key = sym + '|' + cfg.interval + cfg.range + cfg.group;
+  const c = _benchCache[key]; if (c && Date.now() - c.ts < 300000) return c.r;
+  let r = 0;
+  try { const d = await _fetchBars(sym, cfg); const C = d.C; r = C.length > cfg.rsN ? (C[C.length - 1] / C[C.length - 1 - cfg.rsN] - 1) * 100 : 0; } catch (e) { }
+  _benchCache[key] = { r, ts: Date.now() };
+  return r;
+}
+const _scanCache = {};
+async function fetchScan(symbol, benchRet, cfg, tfKey, bench) {
+  const ck = symbol + '|' + tfKey + '|' + bench;
+  const c = _scanCache[ck]; if (c && Date.now() - c.ts < 60000) return c.data;
+  const { meta, H, L, C, V } = await _fetchBars(symbol, cfg);
+  if (C.length < 55) throw new Error('not enough history');
+  const isDaily = (tfKey === '1d');
+  const v7 = await fetchV7Quote(symbol).catch(() => null);
+  const ep = v7 ? extPrice(v7) : null, ec = v7 ? extChange(v7) : null;
+  const price = (ep && ep.price) ? ep.price : (meta.regularMarketPrice || C[C.length - 1]);
+  const prevClose = C.length >= 2 ? C[C.length - 2] : price;
+  // % change: daily = extended-hours daily move; intraday = move over the most recent bar (≈ the chosen period)
+  const changePct = isDaily ? (ec ? ec.changePct : (prevClose ? (price / prevClose - 1) * 100 : 0)) : (prevClose ? (price / prevClose - 1) * 100 : 0);
+  const phase = ec ? ec.phase : 'regular';
+  const curVol = isDaily ? (meta.regularMarketVolume || V[V.length - 1] || 0) : (V[V.length - 1] || 0);
+  const ema8 = _emaLast(C, 8), ema21 = _emaLast(C, 21), sma50 = _smaLast(C, 50), sma100 = _smaLast(C, 100);
+  const { adx, plusDI, minusDI } = _adx(H, L, C, 14);
+  const winHigh = Math.max.apply(null, H.slice(-Math.min(H.length, 252)));
+  const pctFrom52 = winHigh ? (price / winHigh - 1) * 100 : 0;
+  const w = V.slice(-(cfg.rsN + 1), -1), avgV = w.length ? w.reduce((a, b) => a + b, 0) / w.length : 0;
+  const rvol = avgV ? curVol / avgV : 0;
+  const sret = n => C.length > n ? (price / C[C.length - 1 - n] - 1) * 100 : 0;
+  const rs = sret(cfg.rsN) - (benchRet || 0);
+  let ms = 0;
+  if (ema8 != null && price > ema8) ms++;
+  if (ema8 != null && ema21 != null && ema8 > ema21) ms++;
+  if (ema21 != null && sma50 != null && ema21 > sma50) ms++;
+  if (sma50 != null && sma100 != null && sma50 > sma100) ms++;
+  const score = Math.round(
+    30 * _clamp(rvol / 3, 0, 1)
+    + 20 * _clamp(changePct / cfg.momFull, 0, 1)
+    + 25 * (ms / 4)
+    + 15 * ((adx != null && adx >= 25 && plusDI > minusDI) ? 1 : 0)
+    + 10 * _clamp((price / winHigh - 0.75) / 0.25, 0, 1)
+  );
+  // liquidity / size context (daily-based so they're stable across scan timeframes)
+  const dollarVol = (meta.regularMarketVolume || 0) * price;                 // today's $ traded
+  const avgDollar20d = isDaily ? _avg20dFrom(V, C) : await fetch20dAvgDollar(symbol).catch(() => null);
+  const marketCap = _mcapOf(v7);
+  const out = { symbol, price, changePct, phase, rvol, score, maStack: ms, adx, plusDI, minusDI, pctFrom52, rs, dollarVol, avgDollar20d, marketCap };
+  _scanCache[ck] = { ts: Date.now(), data: out };
+  return out;
+}
+const SCAN_BENCH = { QQQ: 1, SPY: 1, SMH: 1 };   // allowed RS benchmarks
+app.get('/api/scan', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const tfKey = SCAN_TF[req.query.tf] ? req.query.tf : '1d';
+  const cfg = SCAN_TF[tfKey];
+  const bench = SCAN_BENCH[(req.query.bench || '').toUpperCase()] ? req.query.bench.toUpperCase() : 'QQQ';
+  const syms = (req.query.symbols || '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean).slice(0, 60);
+  if (!syms.length) return res.json({ rows: [], tf: tfKey, bench });
+  try {
+    const benchRet = await _benchRet(bench, cfg);
+    const rows = await Promise.all(syms.map(async s => { try { return await fetchScan(s, benchRet, cfg, tfKey, bench); } catch (e) { return { symbol: s, error: e.message }; } }));
+    res.json({ rows, tf: tfKey, bench, asOf: Date.now() });
+  } catch (e) { res.json({ rows: [], tf: tfKey, bench, error: e.message }); }
 });
 
 // Upload an image — returns the URL path to use in the dashboard
