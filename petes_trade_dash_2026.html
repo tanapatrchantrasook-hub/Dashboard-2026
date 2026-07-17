@@ -876,6 +876,9 @@ input[type=file]{display:none}
           </div>
         </div>
 
+        <!-- TODAY'S PLAN — pulled from today's Daily Report Card (Market Thesis / Trading Plan / Things to focus on) -->
+        <div id="tm-daily-plan" style="display:none;margin-bottom:12px"></div>
+
         <div id="tm-content" style="display:none">
           <!-- History stats (compact, full width) -->
           <div class="section-block">
@@ -1313,7 +1316,7 @@ function switchPage(key){
     const dwContent=document.getElementById('subtab-daily-watch'); if(dwContent) dwContent.classList.add('active');
     renderWatchlist('daily'); renderWatchlist('weekly');
   }
-  if(key==='psychology')initTradeMgmtDropdown();
+  if(key==='psychology'){initTradeMgmtDropdown();renderTmDailyPlan();}
 }
 function switchSubtab(el,id){
   document.querySelectorAll('.subtab').forEach(t=>t.classList.remove('active'));
@@ -3136,7 +3139,33 @@ function initTradeMgmtDropdown(){
   if (prev && getPlay(parseInt(prev))) sel.value = prev;
 }
 
+// Show TODAY'S Daily Report Card plan (Market Thesis / Trading Plan / Things to focus on)
+// on the Trade Management page, so your plan for the day is in front of you while managing
+// a live trade. Reads the report card for the current trading day (03:00 BKK boundary).
+function renderTmDailyPlan(){
+  const box = document.getElementById('tm-daily-plan');
+  if (!box) return;
+  const today = (typeof drToday==='function') ? drToday() : new Date().toISOString().split('T')[0];
+  const card = (typeof reportCards!=='undefined' && reportCards[today]) ? reportCards[today] : null;
+  const plan = (card && card.texts && card.texts.thesis) ? String(card.texts.thesis).trim() : '';
+  const dLabel = (typeof fmtDMY==='function') ? fmtDMY(today) : today;
+  const esc = (typeof _escHtml==='function') ? _escHtml : (x=>x);
+  const body = plan
+    ? `<div style="font-size:12.5px;color:var(--text);line-height:1.6;white-space:pre-wrap">${esc(plan)}</div>`
+    : `<div style="font-size:12px;color:var(--muted);line-height:1.5">No plan logged for today yet — add it under <strong style="color:var(--accent2)">Daily Report Card &rarr; Market Thesis / Trading Plan / Things to focus on</strong>.</div>`;
+  box.style.display = 'block';
+  box.innerHTML = `
+    <div style="background:var(--surface);border:0.5px solid var(--border2);border-left:2px solid var(--accent2);border-radius:0 8px 8px 0;padding:12px 16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+        <div style="font-family:var(--fd);font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--accent2)"><i class="ti ti-notes" style="font-size:12px"></i> Today's Plan — Daily Report Card</div>
+        <div style="font-size:11px;color:var(--muted)">${esc(dLabel)}</div>
+      </div>
+      ${body}
+    </div>`;
+}
+
 function renderTradeMgmt(){
+  renderTmDailyPlan(); // keep today's plan visible whenever the Trade Management page updates
   const id = parseInt(document.getElementById('tm-setup').value);
   const content = document.getElementById('tm-content');
   const empty = document.getElementById('tm-empty');
