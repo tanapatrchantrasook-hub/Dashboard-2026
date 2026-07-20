@@ -3,15 +3,18 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const https = require('https');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'data', 'dashboard-data.json');
 const IMAGES_DIR = path.join(__dirname, 'data', 'images');
+const IMGCACHE_DIR = path.join(__dirname, 'data', 'imgcache'); // local cache of split-out cloud images
 
 // Ensure data directories exist
 if (!fs.existsSync(path.join(__dirname, 'data'))) fs.mkdirSync(path.join(__dirname, 'data'));
 if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR);
+if (!fs.existsSync(IMGCACHE_DIR)) fs.mkdirSync(IMGCACHE_DIR);
 
 // Initialize data file with empty state if it doesn't exist
 if (!fs.existsSync(DATA_FILE)) {
@@ -40,10 +43,9 @@ const storage = multer.diskStorage({
 const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } }); // 20MB max
 
 // Saves send the ENTIRE dataset (all trades + their base64 screenshots) in one request.
-// That total had grown past the old 50mb cap, so adding an image made saves fail with
-// HTTP 413 (and the app showed the "NOT SAVING" banner). Raised to give lots of headroom.
-// NOTE: screenshots inline as base64 are what bloat this — a future improvement is to
-// store images as files via /api/upload-image so saves stay small.
+// Locally that's fine (it's localhost); the limit is raised so a big payload isn't rejected.
+// For the CLOUD, screenshots are split into separate small objects (see supaSave/supaLoad)
+// so the synced main file stays tiny and never hits Supabase's ~50MB per-object cap.
 app.use(express.json({ limit: '512mb' }));
 app.use(express.static(__dirname));
 app.use('/data/images', express.static(IMAGES_DIR));
@@ -82,24 +84,89 @@ async function supaEnsureBucket() {
   } catch (e) { console.warn('Bucket ensure failed:', e.message); }
 }
 
+// ── IMAGE SPLITTING (keeps the cloud main file tiny) ──────────
+// Screenshots are stored inline as base64, which pushed the whole dataset past Supabase's
+// ~50MB per-object upload cap (adding an image made cloud saves fail). We now split each
+// image into its own small cloud object and keep only a short "@img/{hash}" reference in
+// the main file. The main file drops to <1MB; each image is well under the cap. This happens
+// ONLY in the cloud-sync layer — the local file and the app still use full base64, so nothing
+// else changes. Identical images dedupe by hash (uploaded once). Migration is automatic on
+// the first save (an old full-base64 cloud blob loads as-is, then splits when next saved).
+function _imgRef(dataUrl){ return 'img/' + crypto.createHash('sha1').update(dataUrl).digest('hex'); }
+function _splitImages(node, out){
+  if (typeof node === 'string'){
+    if (node.startsWith('data:image')){ const ref=_imgRef(node); out[ref]=node; return '@'+ref; }
+    return node;
+  }
+  if (Array.isArray(node)){ const a=new Array(node.length); for(let i=0;i<node.length;i++) a[i]=_splitImages(node[i],out); return a; }
+  if (node && typeof node==='object'){ const o={}; for(const k in node) o[k]=_splitImages(node[k],out); return o; }
+  return node;
+}
+function _collectRefs(node, set){
+  if (typeof node === 'string'){ if (node.startsWith('@img/')) set.add(node.slice(1)); return; }
+  if (Array.isArray(node)){ for(const v of node) _collectRefs(v,set); return; }
+  if (node && typeof node==='object'){ for(const k in node) _collectRefs(node[k],set); }
+}
+function _injectImages(node, map){
+  if (typeof node === 'string'){ if (node.startsWith('@img/')){ const ref=node.slice(1); return map[ref]!=null?map[ref]:null; } return node; }
+  if (Array.isArray(node)){ const a=new Array(node.length); for(let i=0;i<node.length;i++) a[i]=_injectImages(node[i],map); return a; }
+  if (node && typeof node==='object'){ const o={}; for(const k in node) o[k]=_injectImages(node[k],map); return o; }
+  return node;
+}
+// Run async tasks with limited concurrency (kind to the free tier).
+async function _pool(items, worker, concurrency){
+  const q=[...items];
+  const runners=Array.from({length:Math.min(concurrency,q.length||1)}, async ()=>{
+    while(q.length){ await worker(q.shift()); }
+  });
+  await Promise.all(runners);
+}
+function _cachePath(ref){ return path.join(IMGCACHE_DIR, ref.replace('img/','')); }
+
+async function supaSaveImage(ref, dataUrl){
+  const r = await fetch(`${SUPA.url}/storage/v1/object/${SUPA_BUCKET}/${ref}`, {
+    method: 'POST',
+    headers: { apikey: SUPA.key, Authorization: 'Bearer ' + SUPA.key, 'Content-Type': 'text/plain', 'x-upsert': 'true' },
+    body: dataUrl
+  });
+  if (!r.ok) throw new Error('Supabase image save HTTP ' + r.status + ' ' + (await r.text()));
+  try { fs.writeFileSync(_cachePath(ref), dataUrl); } catch(e){}
+}
+async function supaLoadImage(ref){
+  try { const p=_cachePath(ref); if (fs.existsSync(p)) return fs.readFileSync(p,'utf8'); } catch(e){} // local cache first
+  const r = await fetch(`${SUPA.url}/storage/v1/object/${SUPA_BUCKET}/${ref}`, {
+    headers: { apikey: SUPA.key, Authorization: 'Bearer ' + SUPA.key }
+  });
+  if (!r.ok) return null; // missing image -> caller substitutes null (empty slot, never a broken ref)
+  const txt = await r.text();
+  try { fs.writeFileSync(_cachePath(ref), txt); } catch(e){}
+  return txt;
+}
+
 async function supaLoad() {
   const r = await fetch(`${SUPA.url}/storage/v1/object/${SUPA_BUCKET}/${SUPA_OBJECT}`, {
     headers: { apikey: SUPA.key, Authorization: 'Bearer ' + SUPA.key }
   });
   if (r.status === 404 || r.status === 400) return null; // nothing uploaded yet
   if (!r.ok) throw new Error('Supabase load HTTP ' + r.status);
-  return await r.json();
+  const main = await r.json();
+  const refs = new Set(); _collectRefs(main, refs);
+  if (refs.size === 0) return main; // old full-base64 blob (pre-split) — use as-is
+  const map = {};
+  await _pool([...refs], async ref => { map[ref] = await supaLoadImage(ref); }, 8);
+  return _injectImages(main, map);
 }
 async function supaSave(data) {
+  const out = {};
+  const main = _splitImages(data, out);
+  // Upload only images not already cached locally (i.e. not already in the cloud).
+  const toUpload = Object.keys(out).filter(ref => { try { return !fs.existsSync(_cachePath(ref)); } catch(e){ return true; } });
+  await _pool(toUpload, async ref => { await supaSaveImage(ref, out[ref]); }, 6);
+  // Upload the small main file (references only — well under any size limit).
   const r = await fetch(`${SUPA.url}/storage/v1/object/${SUPA_BUCKET}/${SUPA_OBJECT}`, {
     method: 'POST',
-    headers: {
-      apikey: SUPA.key,
-      Authorization: 'Bearer ' + SUPA.key,
-      'Content-Type': 'application/json',
-      'x-upsert': 'true'
-    },
-    body: JSON.stringify(data)
+    headers: { apikey: SUPA.key, Authorization: 'Bearer ' + SUPA.key, 'Content-Type': 'application/json', 'x-upsert': 'true' },
+    body: JSON.stringify(main)
   });
   if (!r.ok) throw new Error('Supabase save HTTP ' + r.status + ' ' + (await r.text()));
 }
