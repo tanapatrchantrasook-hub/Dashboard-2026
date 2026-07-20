@@ -1316,7 +1316,15 @@ function switchPage(key){
     const dwContent=document.getElementById('subtab-daily-watch'); if(dwContent) dwContent.classList.add('active');
     renderWatchlist('daily'); renderWatchlist('weekly');
   }
-  if(key==='psychology'){initTradeMgmtDropdown();renderTmDailyPlan();}
+  if(key==='psychology'){
+    // Always open on the first subtab (Trade Management) — not wherever a subtab click on
+    // another page last left things (which could show a blank content area).
+    document.querySelectorAll('#page-psychology .subtab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('#page-psychology .subtab-content').forEach(c=>c.classList.remove('active'));
+    const tmTab=document.querySelector('#page-psychology .subtab[onclick*="trade-mgmt"]'); if(tmTab) tmTab.classList.add('active');
+    const tmContent=document.getElementById('subtab-trade-mgmt'); if(tmContent) tmContent.classList.add('active');
+    initTradeMgmtDropdown();renderTmDailyPlan();
+  }
 }
 function switchSubtab(el,id){
   document.querySelectorAll('.subtab').forEach(t=>t.classList.remove('active'));
