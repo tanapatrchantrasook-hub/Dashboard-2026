@@ -270,6 +270,8 @@ input[type=file]{display:none}
     <div class="logo-sub">2026 · ROLLING</div>
   </div>
   <div class="nav-item" id="nav-news" onclick="switchPage('news')"><i class="ti ti-news"></i> News &amp; Watchlist</div>
+
+  <div class="nav-item" id="nav-econ" onclick="switchPage('econ')"><i class="ti ti-calendar-stats"></i> Economic Calendar</div>
   <div class="nav-divider"></div>
   <div class="nav-item" id="nav-screener" onclick="switchPage('screener')"><i class="ti ti-filter-search"></i> Stock Screener</div>
   <div class="nav-divider"></div>
@@ -841,6 +843,36 @@ input[type=file]{display:none}
     </div>
   </div>
 
+  <!-- ECONOMIC CALENDAR -->
+  <div class="page" id="page-econ">
+    <style>
+      #page-econ table.econ-tbl{border-collapse:collapse;width:100%;font-size:12.5px}
+      #page-econ table.econ-tbl th{text-align:left;padding:8px 12px;font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border2);white-space:nowrap}
+      #page-econ table.econ-tbl td{padding:9px 12px;border-bottom:0.5px solid var(--border);color:var(--text)}
+      #page-econ table.econ-tbl th:not(:first-child),#page-econ table.econ-tbl td:not(:first-child){text-align:right}
+      #page-econ table.econ-tbl tr:last-child td{border-bottom:none}
+    </style>
+    <div class="tl-page">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-family:var(--fd);font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text)">Economic Calendar</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px">US CPI · PPI · Non-Farm Payrolls · FOMC — with the S&amp;P 500 &amp; Nasdaq reaction on each release day. <span id="econ-asof" style="color:var(--accent2)"></span></div>
+        </div>
+        <button onclick="loadEconCalendar(true)" id="econ-refresh-btn" style="display:flex;align-items:center;gap:6px;padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-family:var(--fb);font-weight:600"><i class="ti ti-refresh" style="font-size:13px"></i> Refresh</button>
+      </div>
+      <div class="subtab-bar">
+        <div class="subtab active" onclick="switchSubtab(this,'econ-cal')">Calendar</div>
+        <div class="subtab" onclick="switchSubtab(this,'econ-cpi')">CPI</div>
+        <div class="subtab" onclick="switchSubtab(this,'econ-nfp')">Non-Farm</div>
+        <div class="subtab" onclick="switchSubtab(this,'econ-fomc')">FOMC Rate</div>
+      </div>
+      <div class="subtab-content active" id="subtab-econ-cal"><div id="econ-cal-list" class="empty-log" style="padding:40px 20px">Loading economic calendar…</div></div>
+      <div class="subtab-content" id="subtab-econ-cpi"><div id="econ-cpi"></div></div>
+      <div class="subtab-content" id="subtab-econ-nfp"><div id="econ-nfp"></div></div>
+      <div class="subtab-content" id="subtab-econ-fomc"><div id="econ-fomc"></div></div>
+    </div>
+  </div>
+
   <div class="page" id="page-psychology">
     <div class="tl-page">
       <div class="subtab-bar">
@@ -1315,6 +1347,17 @@ function switchPage(key){
     const dwTab=document.querySelector('#page-news .subtab[onclick*="daily-watch"]'); if(dwTab) dwTab.classList.add('active');
     const dwContent=document.getElementById('subtab-daily-watch'); if(dwContent) dwContent.classList.add('active');
     renderWatchlist('daily'); renderWatchlist('weekly');
+  }
+  if(key==='econ'){
+    // Always open on the first subtab (Calendar).
+    document.querySelectorAll('#page-econ .subtab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('#page-econ .subtab-content').forEach(c=>c.classList.remove('active'));
+    const et=document.querySelector('#page-econ .subtab[onclick*="econ-cal"]'); if(et) et.classList.add('active');
+    const ec=document.getElementById('subtab-econ-cal'); if(ec) ec.classList.add('active');
+    loadEconCalendar();
+    // Auto-refresh every 5 min while the page is open, so new releases appear on their own.
+    clearInterval(_econTimer);
+    _econTimer=setInterval(()=>{ const p=document.getElementById('page-econ'); if(p && p.classList.contains('active')) loadEconCalendar(); else clearInterval(_econTimer); }, 5*60*1000);
   }
   if(key==='psychology'){
     // Always open on the first subtab (Trade Management) — not wherever a subtab click on
@@ -3744,6 +3787,125 @@ function unmarkTradeGoal(id){
 pageTitles['news'] = 'NEWS &amp; <span style="color:var(--accent)">WATCHLIST</span>';
 pageTitles['study'] = 'STUDIES &amp; <span style="color:var(--accent)">RESOURCES</span>';
 pageTitles['analysis'] = 'CLAUDE ANALYSIS &amp; <span style="color:var(--accent)">RECOMMENDATION</span>';
+pageTitles['econ'] = 'ECONOMIC <span style="color:var(--accent)">CALENDAR</span>';
+
+// ── ECONOMIC CALENDAR ────────────────────────────────────────
+// Data comes from /api/econ-calendar (TradingView events + S&P/Nasdaq reaction).
+let econData = null, _econTimer = null;
+async function loadEconCalendar(force){
+  const btn = document.getElementById('econ-refresh-btn');
+  if (btn && force){ btn.disabled = true; btn.style.opacity = '0.6'; }
+  try {
+    const r = await fetch('/api/econ-calendar');
+    const j = await r.json();
+    if (Array.isArray(j.events)) econData = j.events;
+    const asof = document.getElementById('econ-asof');
+    if (asof) asof.textContent = j.stale ? '(showing last saved data — live feed unreachable)' : '';
+    renderEconAll();
+  } catch(e){
+    const l = document.getElementById('econ-cal-list');
+    if (l && !econData){ l.className=''; l.textContent = 'Could not load the calendar — check your connection and hit Refresh.'; }
+  } finally { if (btn){ btn.disabled=false; btn.style.opacity='1'; } }
+}
+function renderEconAll(){ renderEconCal(); renderEconIndicator('CPI','econ-cpi'); renderEconIndicator('NFP','econ-nfp'); renderEconIndicator('FOMC','econ-fomc'); }
+
+function _econPct(v){ if(v==null) return '<span style="color:var(--muted)">—</span>'; const c=v>0?'var(--green)':v<0?'var(--red)':'var(--muted)'; return `<span style="color:${c};font-weight:600">${(v>0?'+':'')+v}%</span>`; }
+function _econShort(d){ const m=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; const p=(d||'').split('-'); return p.length===3 ? (m[+p[1]-1]+" '"+p[0].slice(2)) : d; }
+
+// Paired Actual (accent) vs Forecast (grey) bars with the value printed above each bar.
+function econChart(series, fmt){
+  const vals = series.flatMap(s=>[s.actual,s.forecast]).filter(v=>typeof v==='number');
+  if(!vals.length) return '<div style="color:var(--muted);font-size:12px;padding:16px">No chart data yet.</div>';
+  const hi = Math.max(...vals), lo = Math.min(0, ...vals), span=(hi-lo)||1, H=150;
+  const ac = (typeof themeAccent==='function') ? themeAccent() : '#2dd4bf';
+  const barH = v => (typeof v!=='number') ? 0 : Math.max(2, ((v-lo)/span)*H);
+  const oneBar = (v,color) => (typeof v!=='number')
+    ? '<div style="width:18px"></div>'
+    : `<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end">
+         <div style="font-size:11px;color:${color};font-weight:700;font-family:var(--fd);margin-bottom:4px;white-space:nowrap">${fmt(v)}</div>
+         <div title="${fmt(v)}" style="width:18px;height:${barH(v)}px;background:${color};border-radius:3px 3px 0 0"></div>
+       </div>`;
+  const cols = series.map(s=>`
+    <div style="display:flex;flex-direction:column;align-items:center;gap:7px;min-width:76px">
+      <div style="display:flex;align-items:flex-end;gap:5px;height:${H+24}px">${oneBar(s.actual,ac)}${oneBar(s.forecast,'rgba(255,255,255,0.32)')}</div>
+      <div style="font-size:10px;color:var(--muted);font-family:var(--fd);white-space:nowrap">${s.label}</div>
+    </div>`).join('');
+  return `<div style="overflow-x:auto;padding:6px 2px"><div style="display:flex;gap:12px;align-items:flex-end;min-width:min-content">${cols}</div></div>
+    <div style="display:flex;gap:18px;justify-content:center;margin-top:10px;font-size:11px;color:var(--muted)">
+      <span><span style="display:inline-block;width:11px;height:11px;background:${ac};border-radius:2px;vertical-align:-1px"></span> Actual</span>
+      <span><span style="display:inline-block;width:11px;height:11px;background:rgba(255,255,255,0.32);border-radius:2px;vertical-align:-1px"></span> Forecast</span>
+    </div>`;
+}
+
+const ECON_META = {
+  CPI:  { title:'Inflation Rate YoY', name:'Inflation Rate — CPI (YoY)', fmt:v=>(v==null?'—':v+'%'), desc:'US consumer-price inflation, year-over-year. A hotter-than-forecast print pushes the Fed toward higher-for-longer rates and usually pressures stocks.' },
+  NFP:  { title:'Non Farm Payrolls', name:'Non-Farm Payrolls', fmt:v=>(v==null?'—':v+'K'), desc:'Monthly change in US jobs (ex-farm), in thousands. Big beats or misses swing rate expectations and risk sentiment fast.' },
+  FOMC: { title:'Fed Interest Rate Decision', name:'Fed Interest Rate Decision', fmt:v=>(v==null?'—':v+'%'), desc:'The FOMC target interest-rate decision — the anchor for every risk asset.' }
+};
+function renderEconIndicator(cat, containerId){
+  const box = document.getElementById(containerId); if(!box) return;
+  if(!econData){ box.innerHTML='<div class="empty-log" style="padding:40px">Loading…</div>'; return; }
+  const meta = ECON_META[cat];
+  const byDate = {};
+  econData.filter(e=>e.title===meta.title).forEach(e=>{ byDate[e.date]=e; });
+  const uniq = Object.values(byDate).sort((a,b)=>a.date.localeCompare(b.date));
+  const today = (typeof drToday==='function')?drToday():new Date().toISOString().slice(0,10);
+  const past = uniq.filter(e=>e.actual!=null);
+  const next = uniq.filter(e=>e.actual==null && e.date>=today).sort((a,b)=>a.date.localeCompare(b.date))[0];
+  const series = past.slice(-12).map(e=>({ label:_econShort(e.date), actual:e.actual, forecast:e.forecast }));
+  const rows = [...past].reverse().slice(0,15).map(e=>`
+    <tr>
+      <td>${(typeof fmtDMY==='function')?fmtDMY(e.date):e.date}</td>
+      <td style="font-weight:700">${meta.fmt(e.actual)}</td>
+      <td style="color:var(--muted)">${meta.fmt(e.forecast)}</td>
+      <td style="color:var(--muted)">${meta.fmt(e.previous)}</td>
+      <td>${_econPct(e.spxPct)}</td>
+      <td>${_econPct(e.ndxPct)}</td>
+    </tr>`).join('');
+  box.innerHTML = `
+    <div style="background:var(--surface);border:0.5px solid var(--border2);border-radius:10px;padding:18px 20px;margin-bottom:14px">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div style="font-family:var(--fd);font-size:16px;font-weight:700;color:var(--text)">${meta.name}</div>
+        ${next?`<div style="font-size:12px;color:var(--accent2)">Next release: <strong>${(typeof fmtDMY==='function')?fmtDMY(next.date):next.date}</strong>${next.forecast!=null?` · forecast <strong>${meta.fmt(next.forecast)}</strong>`:''}</div>`:''}
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-top:7px;line-height:1.55">${meta.desc}</div>
+    </div>
+    <div style="background:var(--surface);border:0.5px solid var(--border2);border-radius:10px;padding:16px 14px;margin-bottom:14px">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;padding-left:2px">Actual vs Forecast — last ${series.length} releases</div>
+      ${econChart(series, meta.fmt)}
+    </div>
+    <div style="background:var(--surface);border:0.5px solid var(--border2);border-radius:10px;overflow:hidden">
+      <table class="econ-tbl"><thead><tr><th>Date</th><th>Actual</th><th>Forecast</th><th>Prior</th><th>S&amp;P 500</th><th>Nasdaq</th></tr></thead><tbody>${rows}</tbody></table>
+    </div>`;
+}
+
+function renderEconCal(){
+  const box = document.getElementById('econ-cal-list'); if(!box || !econData) return;
+  const LABELS = { 'Fed Interest Rate Decision':'FOMC Rate Decision', 'Non Farm Payrolls':'Non-Farm Payrolls', 'Inflation Rate YoY':'CPI (YoY)', 'Core Inflation Rate YoY':'Core CPI (YoY)', 'PPI YoY':'PPI (YoY)' };
+  const items = econData.filter(e=>LABELS[e.title]);
+  const today = (typeof drToday==='function')?drToday():new Date().toISOString().slice(0,10);
+  const upcoming = items.filter(e=>e.date>=today).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,12);
+  const recent = items.filter(e=>e.date<today && e.actual!=null).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,24);
+  const fmtFor = cat => (cat==='NFP') ? (v=>v==null?'—':v+'K') : (v=>v==null?'—':v+'%');
+  const row = e => {
+    const fmt = fmtFor(e.category);
+    const beat = (e.actual!=null && e.forecast!=null) ? (e.category==='NFP'? e.actual>e.forecast : null) : null;
+    return `<div style="display:grid;grid-template-columns:96px 1fr 84px 84px 84px;gap:8px;align-items:center;padding:10px 12px;border-bottom:0.5px solid var(--border)">
+      <div style="font-size:12px;color:var(--muted);font-family:var(--fd)">${(typeof fmtDMY==='function')?fmtDMY(e.date):e.date}</div>
+      <div style="font-size:13px;color:var(--accent2);font-weight:600">${LABELS[e.title]}</div>
+      <div style="text-align:right;font-size:12.5px">${e.actual!=null?`<span style="font-weight:700;color:var(--text)">${fmt(e.actual)}</span>`:'<span style="color:var(--accent2);font-size:10px;letter-spacing:0.05em;text-transform:uppercase">Upcoming</span>'}</div>
+      <div style="text-align:right;font-size:12px;color:var(--muted)">${fmt(e.forecast)}</div>
+      <div style="text-align:right;font-size:12px;color:var(--muted)">${fmt(e.previous)}</div>
+    </div>`;
+  };
+  const head = `<div style="display:grid;grid-template-columns:96px 1fr 84px 84px 84px;gap:8px;padding:8px 12px;font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border2)"><div>Date</div><div>Event</div><div style="text-align:right">Actual</div><div style="text-align:right">Forecast</div><div style="text-align:right">Prior</div></div>`;
+  box.className='';
+  box.innerHTML = head +
+    `<div style="margin:16px 0 4px;font-family:var(--fd);font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--accent2)">Upcoming</div>` +
+    (upcoming.map(row).join('') || '<div style="padding:12px;color:var(--muted);font-size:12px">No upcoming events in range.</div>') +
+    `<div style="margin:20px 0 4px;font-family:var(--fd);font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--muted)">Recent releases</div>` +
+    recent.map(row).join('');
+}
 
 // ── TRADES OF THE DAY ────────────────────────────────────────
 const todTrades = [];

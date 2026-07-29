@@ -519,6 +519,81 @@ app.get('/api/quote', async (req, res) => {
   catch (e) { res.json({ symbol, error: e.message }); }
 });
 
+// ── ECONOMIC CALENDAR ─────────────────────────────────────────
+// Economic events (CPI / PPI / Non-Farm Payrolls / FOMC rate) with each date's
+// S&P 500 & Nasdaq close-to-close reaction. Event data comes from TradingView's
+// calendar feed; the market reaction is computed from the same Yahoo daily data
+// the screener uses. Source is isolated here so it can be swapped (e.g. to FRED).
+// Build a {date -> % close change} map for a symbol's daily bars.
+async function fetchDailyPctMap(symbol, range) {
+  const url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(symbol) + '?interval=1d&range=' + range;
+  const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+  if (!r.ok) return {};
+  const j = await r.json();
+  const res = j.chart && j.chart.result && j.chart.result[0];
+  if (!res) return {};
+  const ts = res.timestamp || [];
+  const cl = (res.indicators && res.indicators.quote && res.indicators.quote[0] && res.indicators.quote[0].close) || [];
+  const map = {}; let prev = null;
+  for (let i = 0; i < ts.length; i++) {
+    const c = cl[i]; if (c == null) continue;
+    const d = new Date(ts[i] * 1000).toISOString().slice(0, 10);
+    if (prev != null) map[d] = ((c - prev) / prev) * 100;
+    prev = c;
+  }
+  return map;
+}
+function _econCategory(t) {
+  t = t || '';
+  if (/Fed Interest Rate Decision|FOMC/i.test(t)) return 'FOMC';
+  if (/^Non.?Farm Payrolls$/i.test(t)) return 'NFP';
+  if (/Inflation Rate|Core Inflation|^CPI\b/i.test(t)) return 'CPI';
+  if (/^PPI|Producer Price/i.test(t)) return 'PPI';
+  return null;
+}
+// The feed caps at ~2000 events per request (US has many daily), so a wide range gets
+// truncated. Fetch in overlapping ~90-day windows and dedupe to get full history.
+async function _econRaw(fromMs, toMs) {
+  const url = `https://economic-calendar.tradingview.com/events?from=${new Date(fromMs).toISOString()}&to=${new Date(toMs).toISOString()}&countries=US`;
+  const r = await fetch(url, { headers: { 'Origin': 'https://www.tradingview.com', 'Referer': 'https://www.tradingview.com/', 'User-Agent': 'Mozilla/5.0' } });
+  if (!r.ok) throw new Error('calendar feed HTTP ' + r.status);
+  const j = await r.json();
+  return j.result || j.data || [];
+}
+let _econCache = { ts: 0, data: null };
+app.get('/api/econ-calendar', async (req, res) => {
+  try {
+    if (_econCache.data && Date.now() - _econCache.ts < 10 * 60 * 1000) return res.json(_econCache.data); // 10-min cache
+    const now = Date.now(), DAY = 86400000, WIN = 90 * DAY;
+    const start = now - 450 * DAY, end = now + 80 * DAY; // ~15 months back, ~11 weeks ahead
+    const windows = [];
+    for (let f = start; f < end; f += WIN) windows.push([f, Math.min(f + WIN, end)]);
+    const chunks = await Promise.all(windows.map(w => _econRaw(w[0], w[1]).catch(() => [])));
+    const seen = new Set(); const raw = [];
+    chunks.flat().forEach(e => { const k = (e.date || '') + '|' + (e.title || ''); if (!seen.has(k)) { seen.add(k); raw.push(e); } });
+    const [spx, ndx] = await Promise.all([fetchDailyPctMap('^GSPC', '2y'), fetchDailyPctMap('^IXIC', '2y')]);
+    const events = raw.map(e => {
+      const cat = _econCategory(e.title);
+      if (!cat) return null;
+      const d = (e.date || '').slice(0, 10);
+      return {
+        date: d, title: e.title, category: cat,
+        actual: e.actual, forecast: e.forecast, previous: e.previous,
+        unit: e.unit || '', period: e.period || '', importance: e.importance,
+        spxPct: spx[d] != null ? +spx[d].toFixed(2) : null,
+        ndxPct: ndx[d] != null ? +ndx[d].toFixed(2) : null
+      };
+    }).filter(Boolean).sort((a, b) => a.date.localeCompare(b.date));
+    const data = { events, asOf: Date.now(), source: 'tradingview' };
+    _econCache = { ts: Date.now(), data };
+    res.json(data);
+  } catch (e) {
+    // On failure, serve stale cache if we have it, else an empty set with the error.
+    if (_econCache.data) return res.json(Object.assign({}, _econCache.data, { stale: true, error: e.message }));
+    res.json({ events: [], error: e.message });
+  }
+});
+
 // ── IN-PLAY UPTREND SCAN: trend / relative-strength / composite score ─────────
 // Pulls 1y of daily bars per symbol and computes the moving-average stack, ADX,
 // 52-week-high proximity, relative strength vs SPY, and a 0–100 "In-Play" score.
