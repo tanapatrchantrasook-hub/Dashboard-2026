@@ -851,6 +851,23 @@ input[type=file]{display:none}
       #page-econ table.econ-tbl td{padding:9px 12px;border-bottom:0.5px solid var(--border);color:var(--text)}
       #page-econ table.econ-tbl th:not(:first-child),#page-econ table.econ-tbl td:not(:first-child){text-align:right}
       #page-econ table.econ-tbl tr:last-child td{border-bottom:none}
+      #page-econ .econ-cal-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+      #page-econ .econ-cal-title{font-family:var(--fd);font-size:16px;font-weight:700;color:var(--text);min-width:170px;text-align:center}
+      #page-econ .econ-cal-nav{background:var(--surface);border:0.5px solid var(--border2);color:var(--text);width:30px;height:30px;border-radius:6px;cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center}
+      #page-econ .econ-cal-nav:hover{border-color:var(--accent);color:var(--accent2)}
+      #page-econ .econ-cal-todaybtn{margin-left:auto;background:var(--surface);border:0.5px solid var(--border2);color:var(--accent2);padding:7px 15px;border-radius:6px;cursor:pointer;font-size:12px;font-family:var(--fb)}
+      #page-econ .econ-cal-todaybtn:hover{border-color:var(--accent)}
+      #page-econ .econ-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+      #page-econ .econ-cal-dow{font-size:10px;letter-spacing:0.05em;text-transform:uppercase;color:var(--muted);text-align:center;padding:4px 0;font-family:var(--fd)}
+      #page-econ .econ-cal-cell{min-height:96px;background:var(--surface);border:0.5px solid var(--border2);border-radius:8px;padding:6px 6px 7px;display:flex;flex-direction:column;gap:4px}
+      #page-econ .econ-cal-empty{background:transparent;border:none;min-height:0}
+      #page-econ .econ-cal-today{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+      #page-econ .econ-cal-daynum{font-size:12px;color:var(--muted);font-family:var(--fd);font-weight:700}
+      #page-econ .econ-cal-today .econ-cal-daynum{color:var(--accent2)}
+      #page-econ .econ-cal-events{display:flex;flex-direction:column;gap:3px;overflow:hidden}
+      #page-econ .econ-cal-badge{font-size:10px;padding:2px 5px;border-radius:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--fd);cursor:pointer}
+      #page-econ .econ-cal-legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;font-size:11px;color:var(--muted)}
+      #page-econ .econ-cal-legend span.dot{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:-1px;margin-right:5px}
     </style>
     <div class="tl-page">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
@@ -3879,32 +3896,54 @@ function renderEconIndicator(cat, containerId){
     </div>`;
 }
 
+// Month-grid calendar. Each day box shows badges for that day's key releases;
+// click a badge to jump to that indicator's page.
+const ECON_CAL_COLORS = { FOMC:'#e57368', CPI:'#2dd4bf', NFP:'#e0a52a', PPI:'#8b9cf7' };
+const ECON_CAL_TITLES = { 'Fed Interest Rate Decision':{s:'FOMC',cat:'FOMC',sub:'econ-fomc'}, 'Non Farm Payrolls':{s:'NFP',cat:'NFP',sub:'econ-nfp'}, 'Inflation Rate YoY':{s:'CPI',cat:'CPI',sub:'econ-cpi'}, 'PPI YoY':{s:'PPI',cat:'PPI',sub:null} };
+let econCalMonth = null; // {y, m(0-based)}
+function econCalShift(delta){ if(!econCalMonth) return; let {y,m}=econCalMonth; m+=delta; if(m<0){m=11;y--;} if(m>11){m=0;y++;} econCalMonth={y,m}; renderEconCal(); }
+function econCalToday(){ const t=(typeof drToday==='function')?drToday():new Date().toISOString().slice(0,10); const p=t.split('-'); econCalMonth={y:+p[0],m:+p[1]-1}; renderEconCal(); }
+function econGoto(sub){ const tab=document.querySelector('#page-econ .subtab[onclick*="'+sub+'"]'); if(tab) switchSubtab(tab, sub); }
+function _econCalBadge(e){
+  const meta = ECON_CAL_TITLES[e.title]; if(!meta) return '';
+  const c = ECON_CAL_COLORS[meta.cat] || 'var(--accent2)';
+  const fmt = (meta.cat==='NFP') ? (v=>v+'K') : (v=>v+'%');
+  const val = e.actual!=null ? ' '+fmt(e.actual) : '';
+  const tip = meta.s + (e.actual!=null?(' — actual '+fmt(e.actual)):' — upcoming') + (e.forecast!=null?(' / forecast '+fmt(e.forecast)):'');
+  const click = meta.sub ? `onclick="econGoto('${meta.sub}')"` : '';
+  return `<div class="econ-cal-badge" ${click} title="${tip}" style="background:${c}22;border-left:2px solid ${c}"><span style="color:${c};font-weight:700">${meta.s}</span><span style="color:var(--text)">${val}</span></div>`;
+}
 function renderEconCal(){
   const box = document.getElementById('econ-cal-list'); if(!box || !econData) return;
-  const LABELS = { 'Fed Interest Rate Decision':'FOMC Rate Decision', 'Non Farm Payrolls':'Non-Farm Payrolls', 'Inflation Rate YoY':'CPI (YoY)', 'Core Inflation Rate YoY':'Core CPI (YoY)', 'PPI YoY':'PPI (YoY)' };
-  const items = econData.filter(e=>LABELS[e.title]);
-  const today = (typeof drToday==='function')?drToday():new Date().toISOString().slice(0,10);
-  const upcoming = items.filter(e=>e.date>=today).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,12);
-  const recent = items.filter(e=>e.date<today && e.actual!=null).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,24);
-  const fmtFor = cat => (cat==='NFP') ? (v=>v==null?'—':v+'K') : (v=>v==null?'—':v+'%');
-  const row = e => {
-    const fmt = fmtFor(e.category);
-    const beat = (e.actual!=null && e.forecast!=null) ? (e.category==='NFP'? e.actual>e.forecast : null) : null;
-    return `<div style="display:grid;grid-template-columns:96px 1fr 84px 84px 84px;gap:8px;align-items:center;padding:10px 12px;border-bottom:0.5px solid var(--border)">
-      <div style="font-size:12px;color:var(--muted);font-family:var(--fd)">${(typeof fmtDMY==='function')?fmtDMY(e.date):e.date}</div>
-      <div style="font-size:13px;color:var(--accent2);font-weight:600">${LABELS[e.title]}</div>
-      <div style="text-align:right;font-size:12.5px">${e.actual!=null?`<span style="font-weight:700;color:var(--text)">${fmt(e.actual)}</span>`:'<span style="color:var(--accent2);font-size:10px;letter-spacing:0.05em;text-transform:uppercase">Upcoming</span>'}</div>
-      <div style="text-align:right;font-size:12px;color:var(--muted)">${fmt(e.forecast)}</div>
-      <div style="text-align:right;font-size:12px;color:var(--muted)">${fmt(e.previous)}</div>
-    </div>`;
-  };
-  const head = `<div style="display:grid;grid-template-columns:96px 1fr 84px 84px 84px;gap:8px;padding:8px 12px;font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border2)"><div>Date</div><div>Event</div><div style="text-align:right">Actual</div><div style="text-align:right">Forecast</div><div style="text-align:right">Prior</div></div>`;
   box.className='';
-  box.innerHTML = head +
-    `<div style="margin:16px 0 4px;font-family:var(--fd);font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--accent2)">Upcoming</div>` +
-    (upcoming.map(row).join('') || '<div style="padding:12px;color:var(--muted);font-size:12px">No upcoming events in range.</div>') +
-    `<div style="margin:20px 0 4px;font-family:var(--fd);font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--muted)">Recent releases</div>` +
-    recent.map(row).join('');
+  if(!econCalMonth){ const t=(typeof drToday==='function')?drToday():new Date().toISOString().slice(0,10); const p=t.split('-'); econCalMonth={y:+p[0],m:+p[1]-1}; }
+  const {y,m} = econCalMonth;
+  const today = (typeof drToday==='function')?drToday():new Date().toISOString().slice(0,10);
+  const evByDate = {};
+  econData.filter(e=>ECON_CAL_TITLES[e.title]).forEach(e=>{ (evByDate[e.date]=evByDate[e.date]||[]).push(e); });
+  const startDow = new Date(Date.UTC(y,m,1)).getUTCDay();
+  const daysIn = new Date(Date.UTC(y,m+1,0)).getUTCDate();
+  const MN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const pad = n => String(n).padStart(2,'0');
+  let cells = '';
+  for(let i=0;i<startDow;i++) cells += '<div class="econ-cal-cell econ-cal-empty"></div>';
+  for(let d=1; d<=daysIn; d++){
+    const ds = y+'-'+pad(m+1)+'-'+pad(d);
+    const evs = (evByDate[ds]||[]);
+    const badges = evs.map(_econCalBadge).join('');
+    cells += `<div class="econ-cal-cell${ds===today?' econ-cal-today':''}"><div class="econ-cal-daynum">${d}</div><div class="econ-cal-events">${badges}</div></div>`;
+  }
+  const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(x=>`<div class="econ-cal-dow">${x}</div>`).join('');
+  const legend = Object.entries({FOMC:'FOMC rate',CPI:'CPI',NFP:'Non-Farm',PPI:'PPI'}).map(([k,lbl])=>`<span><span class="dot" style="background:${ECON_CAL_COLORS[k]}"></span>${lbl}</span>`).join('');
+  box.innerHTML = `
+    <div class="econ-cal-head">
+      <button class="econ-cal-nav" onclick="econCalShift(-1)" title="Previous month">‹</button>
+      <div class="econ-cal-title">${MN[m]} ${y}</div>
+      <button class="econ-cal-nav" onclick="econCalShift(1)" title="Next month">›</button>
+      <button class="econ-cal-todaybtn" onclick="econCalToday()">Today</button>
+    </div>
+    <div class="econ-cal-grid">${dow}${cells}</div>
+    <div class="econ-cal-legend">${legend}<span style="color:var(--muted)">· click an event to open its page</span></div>`;
 }
 
 // ── TRADES OF THE DAY ────────────────────────────────────────
