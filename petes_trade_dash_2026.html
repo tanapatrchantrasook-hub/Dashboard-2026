@@ -269,7 +269,6 @@ input[type=file]{display:none}
     <div class="logo-main">PETE'S <span class="logo-accent">TRADE</span> DASH</div>
     <div class="logo-sub">2026 · ROLLING</div>
   </div>
-  <div id="session-mount-top"></div>
   <div class="nav-item" id="nav-news" onclick="switchPage('news')"><i class="ti ti-news"></i> News &amp; Watchlist</div>
 
   <div class="nav-item" id="nav-econ" onclick="switchPage('econ')"><i class="ti ti-calendar-stats"></i> Economic Calendar</div>
@@ -291,7 +290,7 @@ input[type=file]{display:none}
   <div class="nav-item" id="nav-study" onclick="switchPage('study')"><i class="ti ti-school"></i> Studies &amp; Resources</div>
   <div class="nav-divider"></div>
   <div class="nav-item" id="nav-analysis" onclick="switchPage('analysis');renderClaudeAnalysis()"><i class="ti ti-robot"></i> Claude Analysis &amp; Recommendation</div>
-  <div id="session-mount-bottom" style="margin-top:auto"><div id="session-panel" style="padding:14px 18px 6px;border-top:0.5px solid var(--border)"></div></div>
+  <div id="session-panel" style="margin-top:auto;padding:14px 18px 6px;border-top:0.5px solid var(--border)"></div>
 </div>
 
 <!-- MAIN -->
@@ -4139,41 +4138,24 @@ const SESSION_PANEL_LABELS = { 'Opening Session': 'Opening' };
 function _nowBKKHHMM(){
   return new Date().toLocaleTimeString('en-GB', { timeZone:'Asia/Bangkok', hour12:false, hour:'2-digit', minute:'2-digit' });
 }
-// For the current session, each setup's occurrence % (share of this session's journal+TOD
-// trades that used it) and win rate (from TAKEN journal trades for that setup, all sessions).
 function _setupsInSession(sessionName){
-  const journal = trades, tod = (typeof todTrades!=='undefined'?todTrades:[]);
-  const inSess = [...journal, ...tod].filter(t=>t.entryTime && (getSession(t.entryTime)||{}).name===sessionName);
-  const total = inSess.length;
-  const setupsOf = t => (Array.isArray(t.setupNames)&&t.setupNames.length) ? t.setupNames
-      : (typeof t.setup==='string'&&t.setup&&t.setup!=='—' ? t.setup.split(' + ').map(x=>x.trim()) : []);
-  const occ = {};
-  inSess.forEach(t=> setupsOf(t).forEach(n=>{ if(n&&n!=='—') occ[n]=(occ[n]||0)+1; }));
-  return Object.keys(occ).map(name=>{
-    const taken = journal.filter(t=>setupMatch(t,name)); // real trades taken with this setup
-    const w = taken.filter(t=>t.wl==='W').length, l = taken.filter(t=>t.wl==='L').length;
-    return { name, occ:occ[name], pct: total?Math.round(occ[name]/total*100):0, w, l, wr:(w+l)?Math.round(w/(w+l)*100):null };
-  }).sort((a,b)=> b.occ-a.occ || (b.wr||0)-(a.wr||0));
-}
-
-// The session panel can live at the top of the sidebar or its default bottom spot (toggle, persisted).
-function _sessionPanelPos(){ try { return localStorage.getItem('petesSessionPos')==='top' ? 'top' : 'bottom'; } catch(e){ return 'bottom'; } }
-function applySessionPanelPos(){
-  const panel = document.getElementById('session-panel');
-  const mount = document.getElementById('session-mount-' + _sessionPanelPos());
-  if(panel && mount && panel.parentElement!==mount) mount.appendChild(panel);
-}
-function toggleSessionPanelPos(){
-  const next = _sessionPanelPos()==='top' ? 'bottom' : 'top';
-  try { localStorage.setItem('petesSessionPos', next); } catch(e){}
-  applySessionPanelPos(); renderSessionPanel();
+  const all = [...trades, ...(typeof todTrades!=='undefined'?todTrades:[])];
+  const counts = {};
+  all.forEach(t=>{
+    if(!t.entryTime) return;
+    const s = getSession(t.entryTime);
+    if(!s || s.name!==sessionName) return;
+    let names = [];
+    if(Array.isArray(t.setupNames)) names = t.setupNames;
+    else if(typeof t.setup==='string' && t.setup && t.setup!=='—') names = t.setup.split(' + ').map(x=>x.trim());
+    names.forEach(n=>{ if(n && n!=='—') counts[n]=(counts[n]||0)+1; });
+  });
+  return Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(e=>e[0]);
 }
 function renderSessionPanel(){
   const el = document.getElementById('session-panel'); if(!el) return;
   const sess = getSession(_nowBKKHHMM());
-  const atTop = _sessionPanelPos()==='top';
-  const toggle = `<button onclick="toggleSessionPanelPos()" title="Move ${atTop?'down to the bottom':'up to the top'}" style="background:transparent;border:0.5px solid var(--border2);color:var(--muted);border-radius:4px;cursor:pointer;font-size:12px;line-height:1;padding:3px 6px" onmouseover="this.style.color='var(--accent2)';this.style.borderColor='var(--accent)'" onmouseout="this.style.color='var(--muted)';this.style.borderColor='var(--border2)'"><i class="ti ti-arrow-${atTop?'down':'up'}"></i></button>`;
-  let html = `<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:7px"><div style="font-size:9px;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);font-family:var(--fd)">Current Session (BKK)</div>${toggle}</div>`;
+  let html = '<div style="font-size:9px;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);margin-bottom:7px;font-family:var(--fd)">Current Session (BKK)</div>';
   if(sess){
     const col = SESSION_PANEL_COLORS[sess.name] || 'var(--muted)';
     const disp = SESSION_PANEL_LABELS[sess.name] || sess.name;
@@ -4183,16 +4165,9 @@ function renderSessionPanel(){
       <span style="font-size:10px;color:var(--muted);font-family:var(--fd)">${sess.start}–${sess.end}</span></div>`;
     const setups = _setupsInSession(sess.name);
     if(setups.length){
-      html += '<div style="font-size:9px;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;font-family:var(--fd)">Potential setups · occurrence &amp; win rate</div>';
-      html += '<div style="display:flex;flex-direction:column;gap:7px">' + setups.map(s=>{
-        const wrCol = s.wr==null ? 'var(--muted)' : (s.wr>=50?'var(--green)':'var(--red)');
-        const wr = s.wr==null ? '<span style="color:var(--muted)">no taken trades</span>'
-                              : `<span style="color:${wrCol};font-weight:700">${s.wr}% WR</span> <span style="color:var(--muted)">(${s.w}–${s.l})</span>`;
-        return `<div style="line-height:1.3">
-          <div style="font-size:11px;color:var(--text)"><span style="color:${col}">•</span> ${_escHtml(s.name)}</div>
-          <div style="font-size:9.5px;font-family:var(--fd);margin-left:12px;margin-top:1px"><span style="color:${col};font-weight:700">${s.pct}%</span> <span style="color:var(--muted)">of session · </span>${wr}</div>
-        </div>`;
-      }).join('') + '</div>';
+      html += '<div style="font-size:9px;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-bottom:5px;font-family:var(--fd)">Potential setups</div>';
+      html += '<div style="display:flex;flex-direction:column;gap:3px">' +
+        setups.map(n=>`<div style="font-size:11px;color:var(--text);line-height:1.3"><span style="color:${col}">•</span> ${_escHtml(n)}</div>`).join('') + '</div>';
     } else {
       html += '<div style="font-size:10px;color:var(--muted);font-style:italic;line-height:1.4">No setups logged in this window yet.</div>';
     }
@@ -4201,7 +4176,6 @@ function renderSessionPanel(){
           + '<div style="font-size:10px;color:var(--muted);font-style:italic;line-height:1.4">Next: Opening 20:30 BKK</div>';
   }
   el.innerHTML = html;
-  applySessionPanelPos();
 }
 function renderSessionStats(tradeList, elId) {
   const el = document.getElementById(elId);
