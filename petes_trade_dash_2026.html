@@ -36,6 +36,15 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);font-size:13px
 .nav-item i{font-size:16px;flex-shrink:0}
 .nav-divider{height:0.5px;background:var(--border);margin:6px 18px}
 
+/* SUBTLE SCROLLBARS — faint thin thumb instead of the chunky grey default; no arrow buttons */
+*{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.10) transparent}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.09);border-radius:9px;border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.22);background-clip:padding-box}
+::-webkit-scrollbar-button{display:none;width:0;height:0}
+::-webkit-scrollbar-corner{background:transparent}
+
 /* MAIN */
 .main{flex:1;overflow:auto;background:var(--bg)}
 .topbar{padding:16px 28px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--surface);position:sticky;top:0;z-index:10}
