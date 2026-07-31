@@ -175,6 +175,13 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);font-size:13px
 .chart-card{background:var(--surface);border:0.5px solid var(--border2);border-radius:8px;padding:20px;margin-bottom:20px}
 .chart-title{font-family:var(--fd);font-size:12px;letter-spacing:0.08em;color:var(--muted);text-transform:uppercase;margin-bottom:16px}
 canvas{width:100%!important}
+/* Horizontal-scroll wrapper for charts that get cramped as trades accumulate */
+.chart-hscroll{overflow-x:auto;overflow-y:hidden;width:100%}
+.chart-hsizer{position:relative}
+.chart-hsizer canvas{height:100%!important}
+.chart-scroll-btns{display:flex;justify-content:flex-end;gap:5px;margin-bottom:6px}
+.chart-scroll-btn{background:var(--surface);border:0.5px solid var(--border2);color:var(--muted);width:28px;height:22px;border-radius:5px;cursor:pointer;font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center}
+.chart-scroll-btn:hover{border-color:var(--accent);color:var(--accent2)}
 
 /* PLAYBOOK */
 .content{padding:24px 28px}
@@ -478,7 +485,7 @@ input[type=file]{display:none}
   <div class="page" id="page-perf">
     <div class="perf-page">
       <div class="stats-overview" id="stats-overview"></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px">
         <div class="chart-card">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:16px">
             <div class="chart-title" style="margin:0">Equity Curve — Account $ (Trade Journal)</div>
@@ -487,9 +494,10 @@ input[type=file]{display:none}
               <input id="perf-start-balance" type="number" class="form-input" style="width:110px;font-size:12px;font-family:var(--fd);text-align:center;padding:5px 8px" placeholder="e.g. 49500" oninput="setStartingBalance(this.value)">
             </div>
           </div>
-          <canvas id="equity-chart" height="95"></canvas>
+          <div class="chart-scroll-btns" id="equity-arrows"><button class="chart-scroll-btn" onclick="_chartScroll('equity-hsizer',-1)" title="Scroll left">‹</button><button class="chart-scroll-btn" onclick="_chartScroll('equity-hsizer',1)" title="Scroll right">›</button></div>
+          <div class="chart-hscroll"><div class="chart-hsizer" id="equity-hsizer"><canvas id="equity-chart" height="95"></canvas></div></div>
         </div>
-        <div class="chart-card"><div class="chart-title">Total PnL — Per Trade ($) <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">· hover for details · double-click to open the trade</span></div><canvas id="pnl-chart" height="150"></canvas><div id="pnl-trade-info" style="display:none;margin-top:12px;border-top:0.5px solid var(--border);padding-top:12px"></div></div>
+        <div class="chart-card"><div class="chart-title">Total PnL — Per Trade ($) <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">· hover for details · double-click to open the trade</span></div><div class="chart-scroll-btns" id="pnl-arrows"><button class="chart-scroll-btn" onclick="_chartScroll('pnl-hsizer',-1)" title="Scroll left">‹</button><button class="chart-scroll-btn" onclick="_chartScroll('pnl-hsizer',1)" title="Scroll right">›</button></div><div class="chart-hscroll"><div class="chart-hsizer" id="pnl-hsizer"><canvas id="pnl-chart" height="150"></canvas></div></div><div id="pnl-trade-info" style="display:none;margin-top:12px;border-top:0.5px solid var(--border);padding-top:12px"></div></div>
         <div class="chart-card"><div class="chart-title">Avg Reward (R) by Day <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Potential: all trades · Actual: Trade Journal) · hover a day for details</span></div><canvas id="rr-chart" height="150"></canvas><div id="rr-trade-info" style="display:none;margin-top:12px;border-top:0.5px solid var(--border);padding-top:12px"></div></div>
         <div class="chart-card" id="mistakes-chart-card"><div class="chart-title">Mistakes Made</div><div id="mistakes-breakdown" style="margin-top:6px"></div></div>
       </div>
@@ -1363,6 +1371,7 @@ function switchPage(key){
     setTimeout(renderSetupPerformance,65);
     setTimeout(renderBreakEven,66);
     setTimeout(()=>{renderSessionStats(trades,'session-stats-journal');renderSessionStats(todTrades,'session-stats-tod');},70);
+    setTimeout(_syncChartArrows,160);
   }
   if(key==='goals')setTimeout(renderGoals,50);
   if(key==='screener'){ renderScreenerControls(); setTimeout(()=>loadScreener(),30); setTimeout(()=>{ if(typeof switchScreenerTab==='function') switchScreenerTab(screenerTab||'main'); },45); startScreenerAuto(); }
@@ -1837,6 +1846,20 @@ function deleteTodTrade(i){
   scheduleSave();
 }
 
+// Horizontal-scroll navigation for the equity / PnL charts (they widen with trade count).
+// Direct scrollLeft (reliable everywhere); .chart-hscroll has scroll-behavior:smooth for the animation.
+function _chartScroll(sizerId, dir){
+  const s=document.getElementById(sizerId), sc=s&&s.parentElement;
+  if(sc) sc.scrollLeft += dir*Math.max(220, sc.clientWidth*0.6);
+}
+// Hide the arrow buttons for a chart that isn't wide enough to scroll.
+function _syncChartArrows(){
+  [['equity-hsizer','equity-arrows'],['pnl-hsizer','pnl-arrows']].forEach(([sz,ar])=>{
+    const s=document.getElementById(sz), a=document.getElementById(ar), sc=s&&s.parentElement;
+    if(sc && a) a.style.display = (sc.scrollWidth > sc.clientWidth+4) ? 'flex' : 'none';
+  });
+}
+
 function previewImg(i){
   const t=trades[i];if(!t||!t.images[0])return;
   pbOpenLightbox(t.images[0]);
@@ -1925,7 +1948,8 @@ function renderPerformance(){
   const eqL = ['Start', ...trades.map(t=>fmtDMY(t.date)||'—')];
   const eqD = [parseFloat(startBal.toFixed(2)), ...trades.map(t=>{cum+=(t.pnl||0);return parseFloat(cum.toFixed(2));})];
   if(eChart)eChart.destroy();
-  eChart=new Chart(document.getElementById('equity-chart'),{type:'line',data:{labels:eqL,datasets:[{data:eqD,borderColor:ac,backgroundColor:acFill,fill:true,tension:0.35,pointRadius:4,pointBackgroundColor:ac,borderWidth:2}]},options:{...opts,plugins:{...opts.plugins,tooltip:{...opts.plugins.tooltip,callbacks:{label:c=>'$'+c.parsed.y.toLocaleString()}}},scales:{x:{ticks:{color:'#888884',font:{size:11}},grid:{color:gc}},y:{ticks:{color:'#888884',font:{size:11},callback:v=>'$'+v.toLocaleString()},grid:{color:gc}}}}});
+  { const sz=document.getElementById('equity-hsizer'); if(sz){ sz.style.height='95px'; sz.style.minWidth=(eqD.length*15)+'px'; } } // widen with trade count → horizontal scroll
+  eChart=new Chart(document.getElementById('equity-chart'),{type:'line',data:{labels:eqL,datasets:[{data:eqD,borderColor:ac,backgroundColor:acFill,fill:true,tension:0.35,pointRadius:4,pointBackgroundColor:ac,borderWidth:2}]},options:{...opts,maintainAspectRatio:false,plugins:{...opts.plugins,tooltip:{...opts.plugins.tooltip,callbacks:{label:c=>'$'+c.parsed.y.toLocaleString()}}},scales:{x:{ticks:{color:'#888884',font:{size:11}},grid:{color:gc}},y:{ticks:{color:'#888884',font:{size:11},callback:v=>'$'+v.toLocaleString()},grid:{color:gc}}}}});
 
   // Total PnL per-trade bar chart
   // Order the bars chronologically (by date, then entry time) so they line up left→right by date.
@@ -1934,7 +1958,8 @@ function renderPerformance(){
   const pnlLabels = _pnlSorted.length ? _pnlSorted.map(t => fmtDMY(t.date)||'—') : ['No trades'];
   if(pnlChart)pnlChart.destroy();
   const _pnlTrades = _pnlSorted; // bar index → this trade (chronological; for hover/double-click)
-  pnlChart=new Chart(document.getElementById('pnl-chart'),{type:'bar',data:{labels:pnlLabels,datasets:[{data:pnlData,backgroundColor:pnlData.map(v=>v>=0?'rgba(76,175,133,0.65)':'rgba(229,115,104,0.65)'),borderColor:pnlData.map(v=>v>=0?'#4caf85':'#e57368'),borderWidth:1,maxBarThickness:34,borderRadius:4}]},options:{...opts,plugins:{...opts.plugins,tooltip:{enabled:false}},scales:{x:{ticks:{color:'#888884',font:{size:10},maxRotation:90,minRotation:0},grid:{color:gc}},y:{ticks:{color:'#888884',font:{size:11},callback:v=>'$'+v},grid:{color:gc}}}}});
+  { const sz=document.getElementById('pnl-hsizer'); if(sz){ sz.style.height='150px'; sz.style.minWidth=(_pnlSorted.length*15)+'px'; } } // widen with trade count → horizontal scroll
+  pnlChart=new Chart(document.getElementById('pnl-chart'),{type:'bar',data:{labels:pnlLabels,datasets:[{data:pnlData,backgroundColor:pnlData.map(v=>v>=0?'rgba(76,175,133,0.65)':'rgba(229,115,104,0.65)'),borderColor:pnlData.map(v=>v>=0?'#4caf85':'#e57368'),borderWidth:1,maxBarThickness:34,borderRadius:4}]},options:{...opts,maintainAspectRatio:false,plugins:{...opts.plugins,tooltip:{enabled:false}},scales:{x:{ticks:{color:'#888884',font:{size:10},maxRotation:90,minRotation:0},grid:{color:gc}},y:{ticks:{color:'#888884',font:{size:11},callback:v=>'$'+v},grid:{color:gc}}}}});
   // Zoom-proof hover: the dashboard <body> uses CSS zoom, which breaks Chart.js's built-in hit detection,
   // so map the cursor's x to the nearest bar ourselves via the bounding rect + the chart's x scale.
   const _pnlCanvas=document.getElementById('pnl-chart');
