@@ -1861,7 +1861,8 @@ function _syncChartArrows(){
 }
 
 // "Avg Reward by Day" chart source toggle — ON = Trade Journal only; OFF = also include Trades of the Day.
-function _rrJournalOnly(){ try { return localStorage.getItem('petesRrJournalOnly')==='1'; } catch(e){ return false; } }
+// Defaults to ON (Actual Trades / Trade Journal only); set to '0' to include Trades of the Day.
+function _rrJournalOnly(){ try { return localStorage.getItem('petesRrJournalOnly') !== '0'; } catch(e){ return true; } }
 function toggleRrJournalOnly(){ const next=_rrJournalOnly()?'0':'1'; try{ localStorage.setItem('petesRrJournalOnly',next); }catch(e){} if(typeof renderPerformance==='function') renderPerformance(); if(typeof renderSetupPerformance==='function') renderSetupPerformance(); }
 function _updateRrToggle(){
   const b=document.getElementById('rr-journal-toggle'); const sub=document.getElementById('rr-subtitle');
