@@ -498,7 +498,7 @@ input[type=file]{display:none}
           <div class="chart-hscroll"><div class="chart-hsizer" id="equity-hsizer"><canvas id="equity-chart" height="95"></canvas></div></div>
         </div>
         <div class="chart-card"><div class="chart-title">Total PnL — Per Trade ($) <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">· hover for details · double-click to open the trade</span></div><div class="chart-scroll-btns" id="pnl-arrows"><button class="chart-scroll-btn" onclick="_chartScroll('pnl-hsizer',-1)" title="Scroll left">‹</button><button class="chart-scroll-btn" onclick="_chartScroll('pnl-hsizer',1)" title="Scroll right">›</button></div><div class="chart-hscroll"><div class="chart-hsizer" id="pnl-hsizer"><canvas id="pnl-chart" height="150"></canvas></div></div><div id="pnl-trade-info" style="display:none;margin-top:12px;border-top:0.5px solid var(--border);padding-top:12px"></div></div>
-        <div class="chart-card"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:16px"><div class="chart-title" style="margin:0">Avg Reward (R) by Day <span id="rr-subtitle" style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Potential: all trades · Actual: Trade Journal) · hover a day for details</span></div><button id="rr-journal-toggle" onclick="toggleRrJournalOnly()" title="On = Trade Journal only. Off = also include Trades of the Day." style="display:flex;align-items:center;gap:5px;padding:5px 12px;border:0.5px solid var(--border2);background:transparent;color:var(--muted);border-radius:20px;font-size:11px;cursor:pointer;font-family:var(--fb);font-weight:600;white-space:nowrap">Journal only</button></div><canvas id="rr-chart" height="150"></canvas><div id="rr-trade-info" style="display:none;margin-top:12px;border-top:0.5px solid var(--border);padding-top:12px"></div></div>
+        <div class="chart-card"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:16px"><div class="chart-title" style="margin:0">Avg Reward (R) by Day <span id="rr-subtitle" style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Potential: all trades · Actual: Trade Journal) · hover a day for details</span></div><button id="rr-journal-toggle" onclick="toggleRrJournalOnly()" title="On = actual trades only (Trade Journal). Off = also include Trades of the Day." style="display:flex;align-items:center;gap:5px;padding:5px 12px;border:0.5px solid var(--border2);background:transparent;color:var(--muted);border-radius:20px;font-size:11px;cursor:pointer;font-family:var(--fb);font-weight:600;white-space:nowrap">Actual Trades</button></div><canvas id="rr-chart" height="150"></canvas><div id="rr-trade-info" style="display:none;margin-top:12px;border-top:0.5px solid var(--border);padding-top:12px"></div></div>
         <div class="chart-card" id="mistakes-chart-card"><div class="chart-title">Mistakes Made</div><div id="mistakes-breakdown" style="margin-top:6px"></div></div>
       </div>
       <div class="chart-card" id="setup-perf-card" style="margin-top:14px">
@@ -1862,18 +1862,18 @@ function _syncChartArrows(){
 
 // "Avg Reward by Day" chart source toggle — ON = Trade Journal only; OFF = also include Trades of the Day.
 function _rrJournalOnly(){ try { return localStorage.getItem('petesRrJournalOnly')==='1'; } catch(e){ return false; } }
-function toggleRrJournalOnly(){ const next=_rrJournalOnly()?'0':'1'; try{ localStorage.setItem('petesRrJournalOnly',next); }catch(e){} if(typeof renderPerformance==='function') renderPerformance(); }
+function toggleRrJournalOnly(){ const next=_rrJournalOnly()?'0':'1'; try{ localStorage.setItem('petesRrJournalOnly',next); }catch(e){} if(typeof renderPerformance==='function') renderPerformance(); if(typeof renderSetupPerformance==='function') renderSetupPerformance(); }
 function _updateRrToggle(){
   const b=document.getElementById('rr-journal-toggle'); const sub=document.getElementById('rr-subtitle');
   const on=_rrJournalOnly();
   if(b){
-    b.innerHTML = (on?'<i class="ti ti-check" style="font-size:13px"></i> ':'') + 'Journal only';
+    b.innerHTML = (on?'<i class="ti ti-check" style="font-size:13px"></i> ':'') + 'Actual Trades';
     b.style.background = on ? 'var(--accent)' : 'transparent';
     b.style.color = on ? '#fff' : 'var(--muted)';
     b.style.borderColor = on ? 'var(--accent)' : 'var(--border2)';
   }
   if(sub) sub.textContent = on
-    ? '(Trade Journal only) · hover a day for details'
+    ? '(Actual trades only) · hover a day for details'
     : '(Potential: all trades · Actual: Trade Journal) · hover a day for details';
 }
 
@@ -1940,7 +1940,9 @@ function renderPerformance(){
   // Avg Reward (R) counts winning trades only
   const winTrades=allT.filter(t=>t.wl==='W');
   const avgRR=winTrades.length?(winTrades.reduce((s,t)=>s+(t.actualRR||0),0)/winTrades.length).toFixed(2):'—';
-  const avgPot=total?(allT.reduce((s,t)=>s+(t.rrPot||0),0)/total).toFixed(2):'—';
+  // Avg Reward Potential respects the "Actual Trades" toggle: on = journal only; off = also include Trades of the Day.
+  const _potSrc = _rrJournalOnly() ? trades : [...trades, ...(typeof todTrades!=='undefined'?todTrades:[])];
+  const avgPot = _potSrc.length ? (_potSrc.reduce((s,t)=>s+(t.rrPot||0),0)/_potSrc.length).toFixed(2) : '—';
   const totalPnl=allT.reduce((s,t)=>s+(t.pnl||0),0);
   const pnlStr=(totalPnl>=0?'+$':'-$')+Math.abs(totalPnl).toLocaleString();
   // Average time in trade (Trade Journal — entry → exit, handles past-midnight)
@@ -4307,8 +4309,9 @@ function renderSetupPerformance() {
     const losses = jt.filter(t => t.wl === 'L').length;
     const decided = wins + losses;
     const wrNum = decided ? Math.round((wins/decided)*100) : 0;
-    // Avg R:R = average Reward Potential across journal + TOD for this setup
-    const allForSetup = [...trades, ...(typeof todTrades!=='undefined'?todTrades:[])].filter(t => setupMatch(t, p.name));
+    // Avg R:R = average Reward Potential for this setup. Respects the "Actual Trades" toggle:
+    // on = journal only; off = also include Trades of the Day.
+    const allForSetup = (_rrJournalOnly() ? trades : [...trades, ...(typeof todTrades!=='undefined'?todTrades:[])]).filter(t => setupMatch(t, p.name));
     const pots = allForSetup.map(t => t.rrPot).filter(v => v > 0);
     const rrNum = pots.length ? +(pots.reduce((a,b)=>a+b,0)/pots.length).toFixed(1) : null;
     rows.push({ name: p.name, n: jt.length, wins, losses, wr: wrNum, decided, rr: rrNum });
