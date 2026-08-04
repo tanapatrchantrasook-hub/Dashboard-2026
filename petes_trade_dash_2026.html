@@ -338,8 +338,8 @@ input[type=file]{display:none}
       <div class="subtab-bar">
         <div class="subtab active" onclick="switchSubtab(this,'report-card')">Daily Report Card</div>
         <div class="subtab" onclick="switchSubtab(this,'daily-rules');renderDailyRules()">Daily Rules</div>
-        <div class="subtab" onclick="switchSubtab(this,'trade-journal')">Trade Journal</div>
-        <div class="subtab" onclick="switchSubtab(this,'trades-of-day');renderTradesOfDay()">Trades of the Day</div>
+        <div class="subtab" style="border:1.5px solid #4caf85;border-radius:6px" onclick="switchSubtab(this,'trade-journal')">Trade Journal</div>
+        <div class="subtab" style="border:1.5px solid #e0852a;border-radius:6px" onclick="switchSubtab(this,'trades-of-day');renderTradesOfDay()">Trades of the Day</div>
         <div class="subtab" onclick="switchSubtab(this,'weekly-review');renderWeeklyReview()">Weekly Review</div>
       </div>
       <div class="subtab-content active" id="subtab-report-card">
@@ -497,7 +497,7 @@ input[type=file]{display:none}
           <div class="chart-scroll-btns" id="equity-arrows"><button class="chart-scroll-btn" onclick="_chartScroll('equity-hsizer',-1)" title="Scroll left">‹</button><button class="chart-scroll-btn" onclick="_chartScroll('equity-hsizer',1)" title="Scroll right">›</button></div>
           <div class="chart-hscroll"><div class="chart-hsizer" id="equity-hsizer"><canvas id="equity-chart" height="95"></canvas></div></div>
         </div>
-        <div class="chart-card"><div class="chart-title">Total PnL — Per Trade ($) <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">· hover for details · double-click to open the trade</span></div><div class="chart-scroll-btns" id="pnl-arrows"><button class="chart-scroll-btn" onclick="_chartScroll('pnl-hsizer',-1)" title="Scroll left">‹</button><button class="chart-scroll-btn" onclick="_chartScroll('pnl-hsizer',1)" title="Scroll right">›</button></div><div class="chart-hscroll"><div class="chart-hsizer" id="pnl-hsizer"><canvas id="pnl-chart" height="150"></canvas></div></div><div id="pnl-trade-info" style="display:none;margin-top:12px;border-top:0.5px solid var(--border);padding-top:12px"></div></div>
+        <div class="chart-card"><div class="chart-title">Total PnL — Per Trade ($) <span style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">· hover for details · double-click to open the trade</span></div><div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-bottom:6px"><button id="pnl-fitall-toggle" onclick="togglePnlFitAll()" class="chart-scroll-btn" style="width:auto;padding:0 12px;font-size:11px;font-family:var(--fb);font-weight:600">Fit all</button><div id="pnl-arrows" style="display:flex;gap:5px"><button class="chart-scroll-btn" onclick="_chartScroll('pnl-hsizer',-1)" title="Scroll left">‹</button><button class="chart-scroll-btn" onclick="_chartScroll('pnl-hsizer',1)" title="Scroll right">›</button></div></div><div class="chart-hscroll"><div class="chart-hsizer" id="pnl-hsizer"><canvas id="pnl-chart" height="150"></canvas></div></div><div id="pnl-trade-info" style="display:none;margin-top:12px;border-top:0.5px solid var(--border);padding-top:12px"></div></div>
         <div class="chart-card"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:16px"><div class="chart-title" style="margin:0">Avg Reward (R) by Day <span id="rr-subtitle" style="color:rgba(255,255,255,0.3);font-size:10px;text-transform:none;letter-spacing:0">(Potential: all trades · Actual: Trade Journal) · hover a day for details</span></div><button id="rr-journal-toggle" onclick="toggleRrJournalOnly()" title="On = actual trades only (Trade Journal). Off = also include Trades of the Day." style="display:flex;align-items:center;gap:5px;padding:5px 12px;border:0.5px solid var(--border2);background:transparent;color:var(--muted);border-radius:20px;font-size:11px;cursor:pointer;font-family:var(--fb);font-weight:600;white-space:nowrap">Actual Trades</button></div><canvas id="rr-chart" height="150"></canvas><div id="rr-trade-info" style="display:none;margin-top:12px;border-top:0.5px solid var(--border);padding-top:12px"></div></div>
         <div class="chart-card" id="mistakes-chart-card"><div class="chart-title">Mistakes Made</div><div id="mistakes-breakdown" style="margin-top:6px"></div></div>
       </div>
@@ -1860,6 +1860,19 @@ function _syncChartArrows(){
   });
 }
 
+// PnL-per-trade "Fit all" toggle — ON = squeeze every trade into one view (no scroll); OFF = wide + scroll.
+function _pnlFitAll(){ try { return localStorage.getItem('petesPnlFitAll')==='1'; } catch(e){ return false; } }
+function togglePnlFitAll(){ const n=_pnlFitAll()?'0':'1'; try{ localStorage.setItem('petesPnlFitAll',n); }catch(e){} if(typeof renderPerformance==='function') renderPerformance(); setTimeout(_syncChartArrows,120); }
+function _updatePnlFitBtn(){
+  const b=document.getElementById('pnl-fitall-toggle'); if(!b) return;
+  const on=_pnlFitAll();
+  b.textContent = on ? 'Expand' : 'Fit all';
+  b.title = on ? 'Currently showing all trades in one view — click to expand and scroll' : 'Fit every trade into one view (no scrolling)';
+  b.style.color = on ? '#fff' : 'var(--muted)';
+  b.style.background = on ? 'var(--accent)' : 'transparent';
+  b.style.borderColor = on ? 'var(--accent)' : 'var(--border2)';
+}
+
 // "Avg Reward by Day" chart source toggle — ON = Trade Journal only; OFF = also include Trades of the Day.
 // Defaults to ON (Actual Trades / Trade Journal only); set to '0' to include Trades of the Day.
 function _rrJournalOnly(){ try { return localStorage.getItem('petesRrJournalOnly') !== '0'; } catch(e){ return true; } }
@@ -1978,7 +1991,7 @@ function renderPerformance(){
   const pnlLabels = _pnlSorted.length ? _pnlSorted.map(t => fmtDMY(t.date)||'—') : ['No trades'];
   if(pnlChart)pnlChart.destroy();
   const _pnlTrades = _pnlSorted; // bar index → this trade (chronological; for hover/double-click)
-  { const sz=document.getElementById('pnl-hsizer'); if(sz){ sz.style.height='150px'; sz.style.minWidth=(_pnlSorted.length*15)+'px'; } } // widen with trade count → horizontal scroll
+  { const sz=document.getElementById('pnl-hsizer'); if(sz){ sz.style.height='150px'; sz.style.minWidth = _pnlFitAll() ? '0px' : (_pnlSorted.length*15)+'px'; } } _updatePnlFitBtn(); // Fit all → fits the card; else widen with trade count → scroll
   pnlChart=new Chart(document.getElementById('pnl-chart'),{type:'bar',data:{labels:pnlLabels,datasets:[{data:pnlData,backgroundColor:pnlData.map(v=>v>=0?'rgba(76,175,133,0.65)':'rgba(229,115,104,0.65)'),borderColor:pnlData.map(v=>v>=0?'#4caf85':'#e57368'),borderWidth:1,maxBarThickness:34,borderRadius:4}]},options:{...opts,maintainAspectRatio:false,plugins:{...opts.plugins,tooltip:{enabled:false}},scales:{x:{ticks:{color:'#888884',font:{size:10},maxRotation:90,minRotation:0},grid:{color:gc}},y:{ticks:{color:'#888884',font:{size:11},callback:v=>'$'+v},grid:{color:gc}}}}});
   // Zoom-proof hover: the dashboard <body> uses CSS zoom, which breaks Chart.js's built-in hit detection,
   // so map the cursor's x to the nearest bar ourselves via the bounding rect + the chart's x scale.
