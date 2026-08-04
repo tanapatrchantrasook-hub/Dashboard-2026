@@ -883,6 +883,11 @@ input[type=file]{display:none}
       #page-econ .econ-cal-today .econ-cal-daynum{color:var(--accent2)}
       #page-econ .econ-cal-events{display:flex;flex-direction:column;gap:3px;overflow:hidden}
       #page-econ .econ-cal-badge{font-size:10px;padding:2px 5px;border-radius:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--fd);cursor:pointer}
+      #page-econ .econ-cal-add{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:15px;line-height:1;padding:0 3px;opacity:0.3;flex-shrink:0}
+      #page-econ .econ-cal-cell:hover .econ-cal-add{opacity:0.75}
+      #page-econ .econ-cal-add:hover{opacity:1;color:var(--accent2)}
+      #page-econ .econ-cal-note{font-size:10px;padding:2px 5px;border-radius:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--fb);cursor:pointer;background:rgba(255,255,255,0.07);border-left:2px solid var(--accent2);color:var(--text)}
+      #page-econ .econ-cal-note:hover{background:rgba(255,255,255,0.14)}
       #page-econ .econ-cal-legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;font-size:11px;color:var(--muted)}
       #page-econ .econ-cal-legend span.dot{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:-1px;margin-right:5px}
     </style>
@@ -3878,6 +3883,26 @@ pageTitles['econ'] = 'ECONOMIC <span style="color:var(--accent)">CALENDAR</span>
 // ── ECONOMIC CALENDAR ────────────────────────────────────────
 // Data comes from /api/econ-calendar (TradingView events + S&P/Nasdaq reaction).
 let econData = null, _econTimer = null;
+// User's own notes/events on calendar days: { 'YYYY-MM-DD': ['note', ...] }. Persisted + synced.
+let econNotes = {};
+function econAddNote(ds){
+  const t = prompt('Add a note / event for ' + ((typeof fmtDMY==='function')?fmtDMY(ds):ds) + ':', '');
+  if(t===null) return;
+  const v = t.trim(); if(!v) return;
+  (econNotes[ds] = econNotes[ds] || []).push(v);
+  if(typeof scheduleSave==='function') scheduleSave();
+  renderEconCal();
+}
+function econEditNote(ds, i){
+  if(!econNotes[ds] || econNotes[ds][i]==null) return;
+  const t = prompt('Edit note / event (clear the text to delete):', econNotes[ds][i]);
+  if(t===null) return;
+  const v = t.trim();
+  if(!v){ econNotes[ds].splice(i,1); if(!econNotes[ds].length) delete econNotes[ds]; }
+  else { econNotes[ds][i] = v; }
+  if(typeof scheduleSave==='function') scheduleSave();
+  renderEconCal();
+}
 async function loadEconCalendar(force){
   const btn = document.getElementById('econ-refresh-btn');
   if (btn && force){ btn.disabled = true; btn.style.opacity = '0.6'; }
@@ -3983,13 +4008,13 @@ function _econCalBadge(e){
   return `<div class="econ-cal-badge" ${click} title="${tip}" style="background:${c}22;border-left:2px solid ${c}"><span style="color:${c};font-weight:700">${meta.s}</span><span style="color:var(--text)">${val}</span></div>`;
 }
 function renderEconCal(){
-  const box = document.getElementById('econ-cal-list'); if(!box || !econData) return;
+  const box = document.getElementById('econ-cal-list'); if(!box) return;
   box.className='';
   if(!econCalMonth){ const t=(typeof drToday==='function')?drToday():new Date().toISOString().slice(0,10); const p=t.split('-'); econCalMonth={y:+p[0],m:+p[1]-1}; }
   const {y,m} = econCalMonth;
   const today = (typeof drToday==='function')?drToday():new Date().toISOString().slice(0,10);
   const evByDate = {};
-  econData.filter(e=>ECON_CAL_TITLES[e.title]).forEach(e=>{ (evByDate[e.date]=evByDate[e.date]||[]).push(e); });
+  (econData||[]).filter(e=>ECON_CAL_TITLES[e.title]).forEach(e=>{ (evByDate[e.date]=evByDate[e.date]||[]).push(e); });
   const startDow = new Date(Date.UTC(y,m,1)).getUTCDay();
   const daysIn = new Date(Date.UTC(y,m+1,0)).getUTCDate();
   const MN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -3998,9 +4023,16 @@ function renderEconCal(){
   for(let i=0;i<startDow;i++) cells += '<div class="econ-cal-cell econ-cal-empty"></div>';
   for(let d=1; d<=daysIn; d++){
     const ds = y+'-'+pad(m+1)+'-'+pad(d);
-    const evs = (evByDate[ds]||[]);
-    const badges = evs.map(_econCalBadge).join('');
-    cells += `<div class="econ-cal-cell${ds===today?' econ-cal-today':''}"><div class="econ-cal-daynum">${d}</div><div class="econ-cal-events">${badges}</div></div>`;
+    const badges = (evByDate[ds]||[]).map(_econCalBadge).join('');
+    const notes = (typeof econNotes!=='undefined' && econNotes[ds]) ? econNotes[ds] : [];
+    const noteBadges = notes.map((n,i)=>`<div class="econ-cal-note" onclick="event.stopPropagation();econEditNote('${ds}',${i})" title="${_escHtml(n)} — click to edit / delete"><i class="ti ti-note" style="font-size:10px;vertical-align:-1px"></i> ${_escHtml(n)}</div>`).join('');
+    cells += `<div class="econ-cal-cell${ds===today?' econ-cal-today':''}">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div class="econ-cal-daynum">${d}</div>
+        <button class="econ-cal-add" onclick="event.stopPropagation();econAddNote('${ds}')" title="Add a note / event">+</button>
+      </div>
+      <div class="econ-cal-events">${badges}${noteBadges}</div>
+    </div>`;
   }
   const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(x=>`<div class="econ-cal-dow">${x}</div>`).join('');
   const legend = Object.entries({FOMC:'FOMC rate',CPI:'CPI',NFP:'Non-Farm',PPI:'PPI'}).map(([k,lbl])=>`<span><span class="dot" style="background:${ECON_CAL_COLORS[k]}"></span>${lbl}</span>`).join('');
@@ -6900,6 +6932,7 @@ function collectData() {
     uiZoomed: uiZoomed,
     rcRoutineRows: RC_ROUTINE_ROWS,
     rcMgmtRows: RC_MGMT_ROWS,
+    econNotes: econNotes,
     todTrades: todTrades,
     categoriesData: categories.map(cat => ({
       id: cat.id, number: cat.number, title: cat.title,
@@ -7095,6 +7128,8 @@ async function loadSavedData() {
     if (Array.isArray(d.screenerColorFilters)) screenerColorFilters = d.screenerColorFilters.filter(c=>['green','orange','yellow'].includes(c));
     else if (typeof d.screenerColorFilter === 'string' && d.screenerColorFilter) screenerColorFilters = [d.screenerColorFilter];   // migrate old single value
     if (typeof d.uiZoomed === 'boolean') { uiZoomed = d.uiZoomed; applyZoom(); }
+    // Restore user's calendar notes/events
+    if (d.econNotes && typeof d.econNotes === 'object') Object.assign(econNotes, d.econNotes);
     // Restore Trades of the Day
     if (d.todTrades && d.todTrades.length) {
       todTrades.push(...d.todTrades);
