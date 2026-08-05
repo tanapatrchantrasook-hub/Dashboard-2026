@@ -2564,16 +2564,11 @@ function resetPlaybookFilterUI(){
 // Symbols can be added (+) and removed (×) right here without leaving the page.
 function dailyWatchTopbar(){
   const list=(typeof watchlists!=='undefined' && watchlists.daily)?watchlists.daily:[];
-  const esc=s=>String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
   const chips=list.map((w,i)=>{
     // Long = green, Short = red, anything else (Watch Only / none) = white
     const c=w.bias==='Long'?'var(--green)':w.bias==='Short'?'var(--red)':'var(--text)';
-    const tip=[]; // hover tooltip: bias, key levels, and your logged notes
-    if(w.bias && w.bias!=='—') tip.push(w.bias);
-    if(w.levels && w.levels!=='—') tip.push('Levels: '+w.levels);
-    if(w.notes && w.notes!=='—') tip.push('Notes: '+w.notes);
-    const title=esc(tip.join('\n'))||w.ticker;
-    return `<span class="topbar-tag" style="cursor:default;color:${c};flex-shrink:0;display:inline-flex;align-items:center;gap:6px" title="${title}">${w.ticker}<span onclick="event.stopPropagation();removeWatch('daily',${i})" title="Remove ${w.ticker}" style="cursor:pointer;color:var(--muted);font-size:12px;line-height:1" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'">×</span></span>`;
+    // Custom hover tooltip (see _watchTip) — instant, shows bias, key levels, and your notes.
+    return `<span class="topbar-tag" style="cursor:default;color:${c};flex-shrink:0;display:inline-flex;align-items:center;gap:6px" onmouseenter="_watchTip(event,${i})" onmousemove="_watchTipMove(event)" onmouseleave="_watchTipHide()">${w.ticker}<span onclick="event.stopPropagation();removeWatch('daily',${i})" title="Remove ${w.ticker}" style="cursor:pointer;color:var(--muted);font-size:12px;line-height:1" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'">×</span></span>`;
   }).join('');
   const empty=list.length?'':`<span style="font-size:11px;color:var(--muted);font-style:italic">none yet</span>`;
   const addBtn=`<button onclick="openWatchModal('daily')" title="Add a daily watchlist symbol" style="flex-shrink:0;background:transparent;border:0.5px dashed var(--border2);color:var(--muted);border-radius:4px;padding:2px 9px;font-size:14px;line-height:1;cursor:pointer;font-family:var(--fb)" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent2)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'">+</button>`;
@@ -2587,6 +2582,28 @@ function refreshWatchTopbar(){
   const el=document.getElementById('watch-strip');
   if(el) el.innerHTML=dailyWatchTopbar();
 }
+// Instant hover tooltip for watchlist chips — bias, key levels, and your logged notes.
+function _watchTip(e, i){
+  const w=(typeof watchlists!=='undefined' && watchlists.daily)?watchlists.daily[i]:null; if(!w) return;
+  let tip=document.getElementById('watch-tip');
+  if(!tip){ tip=document.createElement('div'); tip.id='watch-tip'; tip.style.cssText='position:fixed;z-index:600;max-width:300px;background:var(--surface);border:0.5px solid var(--border2);border-radius:8px;padding:10px 13px;box-shadow:0 8px 26px rgba(0,0,0,0.55);font-size:12px;line-height:1.55;pointer-events:none;display:none'; document.body.appendChild(tip); }
+  const bc=w.bias==='Long'?'var(--green)':w.bias==='Short'?'var(--red)':'var(--text)';
+  const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const hasL=w.levels&&w.levels!=='—', hasN=w.notes&&w.notes!=='—';
+  let h=`<div style="font-family:var(--fd);font-weight:700;color:${bc}">${esc(w.ticker)} · ${esc(w.bias&&w.bias!=='—'?w.bias:'No bias')}</div>`;
+  if(hasL) h+=`<div style="margin-top:6px;color:var(--muted)"><span style="color:var(--accent2)">Levels:</span> <span style="color:var(--text)">${esc(w.levels)}</span></div>`;
+  if(hasN) h+=`<div style="margin-top:6px;color:var(--text);white-space:pre-wrap"><span style="color:var(--accent2)">Notes:</span> ${esc(w.notes)}</div>`;
+  if(!hasL && !hasN) h+=`<div style="margin-top:4px;color:var(--muted);font-style:italic">No levels or notes logged.</div>`;
+  tip.innerHTML=h; tip.style.display='block'; _watchTipMove(e);
+}
+function _watchTipMove(e){
+  const tip=document.getElementById('watch-tip'); if(!tip||tip.style.display==='none') return;
+  let x=e.clientX+14, y=e.clientY+18;
+  if(x+tip.offsetWidth>window.innerWidth-8) x=window.innerWidth-tip.offsetWidth-8;
+  if(y+tip.offsetHeight>window.innerHeight-8) y=e.clientY-tip.offsetHeight-12;
+  tip.style.left=Math.max(8,x)+'px'; tip.style.top=Math.max(8,y)+'px';
+}
+function _watchTipHide(){ const tip=document.getElementById('watch-tip'); if(tip) tip.style.display='none'; }
 function playMatchesFilter(p){
   // Direction filter
   if(playbookFilter==='long' && !(p.type==='long'||p.type==='both')) return false;
@@ -4708,6 +4725,8 @@ function openWatchModal(mode, editIndex){
   document.getElementById('w-levels').value = (w && w.levels && w.levels!=='—') ? w.levels : '';
   document.getElementById('w-notes').value  = (w && w.notes  && w.notes!=='—')  ? w.notes  : '';
   document.getElementById('w-bias').value   = (w && w.bias   && w.bias!=='—')   ? w.bias   : '';
+  const _sb=document.querySelector('#watch-modal .modal-save-btn');
+  if(_sb) _sb.textContent = w ? 'Save Changes' : ('Add to '+(mode==='daily'?'Daily':'Weekly')+' Watchlist');
   document.getElementById('watch-modal').classList.add('open');
 }
 function closeWatchModal(){ watchEditIndex = null; document.getElementById('watch-modal').classList.remove('open'); }
