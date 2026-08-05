@@ -2564,9 +2564,16 @@ function resetPlaybookFilterUI(){
 // Symbols can be added (+) and removed (×) right here without leaving the page.
 function dailyWatchTopbar(){
   const list=(typeof watchlists!=='undefined' && watchlists.daily)?watchlists.daily:[];
+  const esc=s=>String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
   const chips=list.map((w,i)=>{
-    const c=w.bias==='Long'?'var(--green)':w.bias==='Short'?'var(--red)':'var(--accent2)';
-    return `<span class="topbar-tag" style="cursor:default;color:${c};flex-shrink:0;display:inline-flex;align-items:center;gap:6px" title="${w.bias||''}${w.levels&&w.levels!=='—'?' · '+w.levels:''}">${w.ticker}<span onclick="event.stopPropagation();removeWatch('daily',${i})" title="Remove ${w.ticker}" style="cursor:pointer;color:var(--muted);font-size:12px;line-height:1" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'">×</span></span>`;
+    // Long = green, Short = red, anything else (Watch Only / none) = white
+    const c=w.bias==='Long'?'var(--green)':w.bias==='Short'?'var(--red)':'var(--text)';
+    const tip=[]; // hover tooltip: bias, key levels, and your logged notes
+    if(w.bias && w.bias!=='—') tip.push(w.bias);
+    if(w.levels && w.levels!=='—') tip.push('Levels: '+w.levels);
+    if(w.notes && w.notes!=='—') tip.push('Notes: '+w.notes);
+    const title=esc(tip.join('\n'))||w.ticker;
+    return `<span class="topbar-tag" style="cursor:default;color:${c};flex-shrink:0;display:inline-flex;align-items:center;gap:6px" title="${title}">${w.ticker}<span onclick="event.stopPropagation();removeWatch('daily',${i})" title="Remove ${w.ticker}" style="cursor:pointer;color:var(--muted);font-size:12px;line-height:1" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'">×</span></span>`;
   }).join('');
   const empty=list.length?'':`<span style="font-size:11px;color:var(--muted);font-style:italic">none yet</span>`;
   const addBtn=`<button onclick="openWatchModal('daily')" title="Add a daily watchlist symbol" style="flex-shrink:0;background:transparent;border:0.5px dashed var(--border2);color:var(--muted);border-radius:4px;padding:2px 9px;font-size:14px;line-height:1;cursor:pointer;font-family:var(--fb)" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent2)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'">+</button>`;
