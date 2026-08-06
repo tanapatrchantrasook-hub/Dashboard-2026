@@ -73,6 +73,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);font-size:13px
 .subtab{padding:10px 18px;font-size:13px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;font-family:var(--fd);letter-spacing:0.04em;border-radius:6px 6px 0 0}
 .subtab:hover{color:var(--text);background:rgba(255,255,255,0.03)}
 .subtab.active{color:var(--accent2);border-bottom-color:var(--accent);background:rgba(224,92,42,0.10);font-weight:700}
+.subtab.boxed-subtab.active{border:1.5px solid var(--accent);border-radius:6px} /* green box only on the selected Trade Journal / Trades of the Day tab */
 .subtab-content{display:none}
 .subtab-content.active{display:block}
 .src-group{display:flex;align-items:center;gap:5px;background:var(--surface);border:0.5px solid var(--border2);border-radius:8px;padding:6px 10px}
@@ -339,8 +340,8 @@ input[type=file]{display:none}
       <div class="subtab-bar">
         <div class="subtab active" onclick="switchSubtab(this,'report-card')">Daily Report Card</div>
         <div class="subtab" onclick="switchSubtab(this,'daily-rules');renderDailyRules()">Daily Rules</div>
-        <div class="subtab" style="border:1.5px solid var(--accent);border-radius:6px" onclick="switchSubtab(this,'trade-journal')">Trade Journal</div>
-        <div class="subtab" style="border:1.5px solid var(--accent);border-radius:6px" onclick="switchSubtab(this,'trades-of-day');renderTradesOfDay()">Trades of the Day</div>
+        <div class="subtab boxed-subtab" onclick="switchSubtab(this,'trade-journal')">Trade Journal</div>
+        <div class="subtab boxed-subtab" onclick="switchSubtab(this,'trades-of-day');renderTradesOfDay()">Trades of the Day</div>
         <div class="subtab" onclick="switchSubtab(this,'weekly-review');renderWeeklyReview()">Weekly Review</div>
       </div>
       <div class="subtab-content active" id="subtab-report-card">
@@ -1336,7 +1337,7 @@ function applyTheme(theme){
   currentTheme = theme==='orange' ? 'orange' : 'teal';
   document.body.classList.toggle('theme-teal', currentTheme==='teal');
   const lbl = document.getElementById('theme-label');
-  if(lbl) lbl.textContent = currentTheme==='orange' ? '♏️' : '🌙';
+  if(lbl) lbl.textContent = currentTheme==='orange' ? '🦂' : '🌙';
 }
 function toggleTheme(){
   applyTheme(currentTheme==='orange' ? 'teal' : 'orange');
