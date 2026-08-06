@@ -1955,6 +1955,10 @@ const goals = []; // { id, name } — declared early; used by renderPerformance
 let nextGoalId = 1;
 const masterMistakes = []; // { id, name } — persists across trades
 let tradeCheckedMistakes = {}; // { id: true } for current modal
+// Declared early: renderPerformance() runs on initial load (before the old
+// declaration point lower in the file), so it must exist by then to avoid a
+// temporal-dead-zone ReferenceError.
+const tradingSettings = { dailyTarget: '', dailyLoss: '', startingBalance: '' };
 function setStartingBalance(val){
   tradingSettings.startingBalance = val;
   renderPerformance();
@@ -3573,7 +3577,8 @@ renderPlaybook2();
 renderPerformance();
 initTradeMgmtDropdown();
 renderPsychLog();
-renderSessionPanel();
+// (renderSessionPanel is defined in a later <script> block and is invoked there
+// once trades load, plus on a 60s interval — calling it here would run before it exists.)
 
 </script>
 <!-- NEWS MODAL -->
@@ -6390,7 +6395,7 @@ const DAILY_RULES_DEF = [
     yMsg:'🎯 Look for high-probability setups and the next most likely scenario.', nMsg:'' },
 ];
 
-const tradingSettings = { dailyTarget: '', dailyLoss: '', startingBalance: '' };
+// tradingSettings is declared earlier (near renderPerformance) to avoid a load-order TDZ error.
 
 // Trading day rolls over at 03:00 BKK (UTC+7). Computed from UTC epoch so it's
 // correct on any computer regardless of its local timezone.
