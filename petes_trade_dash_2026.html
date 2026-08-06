@@ -9,9 +9,10 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0d0d0f;--surface:#141416;--surface2:#1a1a1e;
-  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
-  --text:#f0f0ee;--muted:#888884;--accent:#e05c2a;--accent2:#f0834a;
+  /* SUN theme — sleek black + classy neon green (the moon/teal theme below is unchanged) */
+  --bg:#000000;--surface:#0e0e11;--surface2:#16161a;
+  --border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.11);
+  --text:#f2f2f0;--muted:#8a8a90;--accent:#00e676;--accent2:#5affac;
   --green:#4caf85;--red:#e57368;
   --fd:'DM Mono','Fira Mono',monospace;--fb:'DM Sans','Inter',sans-serif;
 }
@@ -1346,7 +1347,7 @@ function toggleTheme(){
 }
 // Restore the saved theme as early as possible (before startup rendering)
 try { applyTheme(localStorage.getItem('petesDashTheme') || 'teal'); } catch(e){}
-function themeAccent(){ return getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#e05c2a'; }
+function themeAccent(){ return getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#00e676'; }
 
 // Bigger-text toggle (magnifier, top-right): scales the whole UI ~15% for larger screens.
 let uiZoomed = false;
@@ -1976,8 +1977,8 @@ function renderPerformance(){
   `;
   const gc='rgba(255,255,255,0.05)',opts={responsive:true,plugins:{legend:{display:false},tooltip:{backgroundColor:'#1a1a1e',titleColor:'#f0f0ee',bodyColor:'#888884',borderColor:'rgba(255,255,255,0.1)',borderWidth:1}}};
   const ac=themeAccent();
-  const acFill=currentTheme==='teal'?'rgba(45,212,191,0.08)':'rgba(224,92,42,0.08)';
-  const acBar=currentTheme==='teal'?'rgba(45,212,191,0.4)':'rgba(224,92,42,0.4)';
+  const acFill=currentTheme==='teal'?'rgba(45,212,191,0.08)':'rgba(0,230,118,0.08)';
+  const acBar=currentTheme==='teal'?'rgba(45,212,191,0.4)':'rgba(0,230,118,0.4)';
   // Equity curve uses Trade Journal only — starts from the account starting balance and adds/deducts each trade's PnL
   const startBal = parseFloat(tradingSettings.startingBalance) || 0;
   const sbInput = document.getElementById('perf-start-balance');
@@ -3317,8 +3318,8 @@ function renderTmDailyPlan(){
   const dLabel = (typeof fmtDMY==='function') ? fmtDMY(today) : today;
   const esc = (typeof _escHtml==='function') ? _escHtml : (x=>x);
   // Theme-adaptive accent tint so the panel glows in whichever theme is active.
-  const tint = (typeof currentTheme!=='undefined' && currentTheme==='orange') ? 'rgba(224,92,42,0.09)' : 'rgba(45,212,191,0.09)';
-  const glow = (typeof currentTheme!=='undefined' && currentTheme==='orange') ? 'rgba(224,92,42,0.35)' : 'rgba(45,212,191,0.35)';
+  const tint = (typeof currentTheme!=='undefined' && currentTheme==='orange') ? 'rgba(0,230,118,0.09)' : 'rgba(45,212,191,0.09)';
+  const glow = (typeof currentTheme!=='undefined' && currentTheme==='orange') ? 'rgba(0,230,118,0.35)' : 'rgba(45,212,191,0.35)';
   const body = plan
     ? `<div style="font-size:19px;color:var(--text);line-height:1.75;white-space:pre-wrap;font-weight:500">${esc(plan)}</div>`
     : `<div style="font-size:15px;color:var(--muted);line-height:1.6">No plan logged for today yet — add it under <strong style="color:var(--accent2)">Daily Report Card &rarr; Market Thesis / Trading Plan / Things to focus on</strong>.</div>`;
