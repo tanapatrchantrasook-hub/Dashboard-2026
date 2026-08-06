@@ -339,8 +339,8 @@ input[type=file]{display:none}
       <div class="subtab-bar">
         <div class="subtab active" onclick="switchSubtab(this,'report-card')">Daily Report Card</div>
         <div class="subtab" onclick="switchSubtab(this,'daily-rules');renderDailyRules()">Daily Rules</div>
-        <div class="subtab" style="border:1.5px solid #4caf85;border-radius:6px" onclick="switchSubtab(this,'trade-journal')">Trade Journal</div>
-        <div class="subtab" style="border:1.5px solid #e0852a;border-radius:6px" onclick="switchSubtab(this,'trades-of-day');renderTradesOfDay()">Trades of the Day</div>
+        <div class="subtab" style="border:1.5px solid var(--accent);border-radius:6px" onclick="switchSubtab(this,'trade-journal')">Trade Journal</div>
+        <div class="subtab" style="border:1.5px solid var(--accent);border-radius:6px" onclick="switchSubtab(this,'trades-of-day');renderTradesOfDay()">Trades of the Day</div>
         <div class="subtab" onclick="switchSubtab(this,'weekly-review');renderWeeklyReview()">Weekly Review</div>
       </div>
       <div class="subtab-content active" id="subtab-report-card">
@@ -1336,7 +1336,7 @@ function applyTheme(theme){
   currentTheme = theme==='orange' ? 'orange' : 'teal';
   document.body.classList.toggle('theme-teal', currentTheme==='teal');
   const lbl = document.getElementById('theme-label');
-  if(lbl) lbl.textContent = currentTheme==='orange' ? '☀️' : '🌙';
+  if(lbl) lbl.textContent = currentTheme==='orange' ? '♏️' : '🌙';
 }
 function toggleTheme(){
   applyTheme(currentTheme==='orange' ? 'teal' : 'orange');
