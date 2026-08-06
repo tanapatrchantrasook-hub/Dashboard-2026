@@ -1342,7 +1342,7 @@ function applyTheme(theme){
   currentTheme = theme==='orange' ? 'orange' : 'teal';
   document.body.classList.toggle('theme-teal', currentTheme==='teal');
   const lbl = document.getElementById('theme-label');
-  if(lbl) lbl.textContent = currentTheme==='orange' ? '🎭' : '🌙';
+  if(lbl) lbl.textContent = currentTheme==='orange' ? '⚖️' : '🌙';
 }
 function toggleTheme(){
   applyTheme(currentTheme==='orange' ? 'teal' : 'orange');
