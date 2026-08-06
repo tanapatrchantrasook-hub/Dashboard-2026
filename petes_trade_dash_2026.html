@@ -867,6 +867,9 @@ input[type=file]{display:none}
     <style>
       #page-econ table.econ-tbl{border-collapse:collapse;width:100%;font-size:12.5px}
       #page-econ table.econ-tbl th{text-align:left;padding:8px 12px;font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border2);white-space:nowrap}
+      #page-econ table.dg-tbl th{text-align:center}
+      #page-econ table.dg-tbl th:first-child{text-align:left}
+      #page-econ table.dg-tbl td{padding:7px 8px}
       #page-econ table.econ-tbl td{padding:9px 12px;border-bottom:0.5px solid var(--border);color:var(--text)}
       #page-econ table.econ-tbl th:not(:first-child),#page-econ table.econ-tbl td:not(:first-child){text-align:right}
       #page-econ table.econ-tbl tr:last-child td{border-bottom:none}
@@ -906,11 +909,13 @@ input[type=file]{display:none}
         <div class="subtab" onclick="switchSubtab(this,'econ-cpi')">CPI</div>
         <div class="subtab" onclick="switchSubtab(this,'econ-nfp')">Non-Farm</div>
         <div class="subtab" onclick="switchSubtab(this,'econ-fomc')">FOMC Rate</div>
+        <div class="subtab" onclick="switchSubtab(this,'econ-dg');loadEconDailyGain()">Daily % Gain</div>
       </div>
       <div class="subtab-content active" id="subtab-econ-cal"><div id="econ-cal-list" class="empty-log" style="padding:40px 20px">Loading economic calendar…</div></div>
       <div class="subtab-content" id="subtab-econ-cpi"><div id="econ-cpi"></div></div>
       <div class="subtab-content" id="subtab-econ-nfp"><div id="econ-nfp"></div></div>
       <div class="subtab-content" id="subtab-econ-fomc"><div id="econ-fomc"></div></div>
+      <div class="subtab-content" id="subtab-econ-dg"><div id="econ-dg"><div class="empty-log" style="padding:40px 20px">Loading daily % gains…</div></div></div>
     </div>
   </div>
 
@@ -3947,6 +3952,58 @@ async function loadEconCalendar(force){
 function renderEconAll(){ renderEconCal(); renderEconIndicator('CPI','econ-cpi'); renderEconIndicator('NFP','econ-nfp'); renderEconIndicator('FOMC','econ-fomc'); }
 
 function _econPct(v){ if(v==null) return '<span style="color:var(--muted)">—</span>'; const c=v>0?'var(--green)':v<0?'var(--red)':'var(--muted)'; return `<span style="color:${c};font-weight:600">${(v>0?'+':'')+v}%</span>`; }
+// Actual value color: green if it beat forecast, red if it missed, neutral otherwise.
+function _econActualColor(actual, forecast){
+  if(typeof actual!=='number' || typeof forecast!=='number') return 'var(--text)';
+  return actual>forecast ? 'var(--green)' : actual<forecast ? 'var(--red)' : 'var(--text)';
+}
+
+// ── DAILY % GAIN (day-of-week × week heatmap) ─────────────────
+let dgData = null, dgIndex = '^GSPC';
+async function loadEconDailyGain(force){
+  if(dgData && !force){ renderEconDailyGain(); return; }
+  const box=document.getElementById('econ-dg');
+  try{
+    const r=await fetch('/api/daily-gains'); const j=await r.json();
+    if(j && (j['^GSPC']||j['^IXIC'])) dgData=j;
+    renderEconDailyGain();
+  }catch(e){ if(box && !dgData) box.innerHTML='<div class="empty-log" style="padding:40px">Could not load — check your connection and try again.</div>'; }
+}
+function setDgIndex(sym){ dgIndex=sym; renderEconDailyGain(); }
+function _dgCell(v){
+  if(typeof v!=='number') return `<td style="text-align:center;color:rgba(255,255,255,0.2)">—</td>`;
+  const up=v>=0, a=Math.min(0.55, Math.abs(v)/2.5*0.55); // heatmap: full intensity around ±2.5%
+  return `<td style="text-align:center;background:${up?`rgba(0,230,118,${a})`:`rgba(255,82,82,${a})`};color:${up?'var(--green)':'var(--red)'};font-weight:600;font-family:var(--fd)">${(v>0?'+':'')+v.toFixed(2)}%</td>`;
+}
+function renderEconDailyGain(){
+  const box=document.getElementById('econ-dg'); if(!box) return;
+  const map=(dgData && dgData[dgIndex]) ? dgData[dgIndex] : null;
+  if(!map){ box.innerHTML='<div class="empty-log" style="padding:40px">Loading daily % gains…</div>'; return; }
+  const today=(typeof drToday==='function')?drToday():new Date().toISOString().slice(0,10);
+  const year=+today.slice(0,4);
+  const pad=n=>String(n).padStart(2,'0');
+  const fmt=dt=>dt.getUTCFullYear()+'-'+pad(dt.getUTCMonth()+1)+'-'+pad(dt.getUTCDate());
+  const mondayOf=ds=>{ const t=new Date(ds+'T12:00:00Z'); const dow=t.getUTCDay(); t.setUTCDate(t.getUTCDate()+(dow===0?-6:1-dow)); return t; };
+  const startMon=mondayOf(year+'-01-01');
+  const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  let cur=mondayOf(today); const rows=[];
+  while(cur.getTime() >= startMon.getTime()){ rows.push(new Date(cur)); cur.setUTCDate(cur.getUTCDate()-7); }
+  const dayNames=['Mon','Tue','Wed','Thu','Fri'];
+  const head=`<tr><th>Week of</th>${dayNames.map(d=>`<th>${d}</th>`).join('')}</tr>`;
+  const body=rows.map(mon=>{
+    const label=mon.getUTCDate()+' '+MON[mon.getUTCMonth()];
+    const cells=[0,1,2,3,4].map(off=>{ const dt=new Date(mon); dt.setUTCDate(dt.getUTCDate()+off); const ds=fmt(dt); return (ds<=today)?_dgCell(map[ds]):'<td style="text-align:center;color:rgba(255,255,255,0.15)">·</td>'; }).join('');
+    return `<tr><td style="color:var(--muted);font-family:var(--fd);white-space:nowrap">${label}</td>${cells}</tr>`;
+  }).join('');
+  const idxBtn=(sym,lbl)=>`<button onclick="setDgIndex('${sym}')" style="padding:5px 14px;border-radius:6px;border:0.5px solid ${dgIndex===sym?'var(--accent)':'var(--border2)'};background:${dgIndex===sym?'var(--accent)':'transparent'};color:${dgIndex===sym?'#fff':'var(--muted)'};font-size:12px;cursor:pointer;font-family:var(--fb);font-weight:600">${lbl}</button>`;
+  box.className='';
+  box.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+      <div style="font-size:12px;color:var(--muted);max-width:520px;line-height:1.5">Daily close-to-close % by weekday, week by week — ${year} to date (most recent on top). Green = up day, red = down day; deeper shade = bigger move.</div>
+      <div style="display:flex;gap:6px">${idxBtn('^GSPC','S&P 500')}${idxBtn('^IXIC','Nasdaq')}</div>
+    </div>
+    <div style="overflow-x:auto"><table class="econ-tbl dg-tbl" style="min-width:520px"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+}
 function _econShort(d){ const m=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; const p=(d||'').split('-'); return p.length===3 ? (m[+p[1]-1]+" '"+p[0].slice(2)) : d; }
 
 // Paired Actual (accent) vs Forecast (grey) bars with the value printed above each bar.
@@ -3993,7 +4050,7 @@ function renderEconIndicator(cat, containerId){
   const rows = [...past].reverse().slice(0,15).map(e=>`
     <tr>
       <td>${(typeof fmtDMY==='function')?fmtDMY(e.date):e.date}</td>
-      <td style="font-weight:700">${meta.fmt(e.actual)}</td>
+      <td style="font-weight:700;color:${_econActualColor(e.actual,e.forecast)}">${meta.fmt(e.actual)}</td>
       <td style="color:var(--muted)">${meta.fmt(e.forecast)}</td>
       <td style="color:var(--muted)">${meta.fmt(e.previous)}</td>
       <td>${_econPct(e.spxPct)}</td>

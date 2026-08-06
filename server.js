@@ -594,6 +594,23 @@ app.get('/api/econ-calendar', async (req, res) => {
   }
 });
 
+// Daily close-to-close % for S&P 500 (^GSPC) and Nasdaq (^IXIC) — for the Daily % Gain grid.
+let _dgCache = { ts: 0, data: null };
+app.get('/api/daily-gains', async (req, res) => {
+  try {
+    if (_dgCache.data && Date.now() - _dgCache.ts < 30 * 60 * 1000) return res.json(_dgCache.data); // 30-min cache
+    const [spx, ndx] = await Promise.all([fetchDailyPctMap('^GSPC', '2y'), fetchDailyPctMap('^IXIC', '2y')]);
+    // round to 2dp to keep the payload small
+    const round = m => { const o = {}; for (const k in m) o[k] = +m[k].toFixed(2); return o; };
+    const data = { '^GSPC': round(spx), '^IXIC': round(ndx), asOf: Date.now() };
+    _dgCache = { ts: Date.now(), data };
+    res.json(data);
+  } catch (e) {
+    if (_dgCache.data) return res.json(Object.assign({}, _dgCache.data, { stale: true, error: e.message }));
+    res.json({ error: e.message });
+  }
+});
+
 // ── IN-PLAY UPTREND SCAN: trend / relative-strength / composite score ─────────
 // Pulls 1y of daily bars per symbol and computes the moving-average stack, ADX,
 // 52-week-high proximity, relative strength vs SPY, and a 0–100 "In-Play" score.
