@@ -577,7 +577,7 @@ app.get('/api/econ-calendar', async (req, res) => {
       if (!cat) return null;
       const d = (e.date || '').slice(0, 10);
       return {
-        date: d, title: e.title, category: cat,
+        date: d, datetime: e.date, title: e.title, category: cat,
         actual: e.actual, forecast: e.forecast, previous: e.previous,
         unit: e.unit || '', period: e.period || '', importance: e.importance,
         spxPct: spx[d] != null ? +spx[d].toFixed(2) : null,

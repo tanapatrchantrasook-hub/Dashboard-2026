@@ -1405,6 +1405,9 @@ function switchPage(key){
     // Auto-refresh every 5 min while the page is open, so new releases appear on their own.
     clearInterval(_econTimer);
     _econTimer=setInterval(()=>{ const p=document.getElementById('page-econ'); if(p && p.classList.contains('active')) loadEconCalendar(); else clearInterval(_econTimer); }, 5*60*1000);
+    // Tick the "next release" countdowns every second while the page is open.
+    clearInterval(_econCdTimer);
+    _econCdTimer=setInterval(()=>{ const p=document.getElementById('page-econ'); if(p && p.classList.contains('active')) _econTickCountdowns(); else clearInterval(_econCdTimer); }, 1000);
   }
   if(key==='psychology'){
     // Always open on the first subtab (Trade Management) — not wherever a subtab click on
@@ -3949,7 +3952,7 @@ async function loadEconCalendar(force){
     if (l && !econData){ l.className=''; l.textContent = 'Could not load the calendar — check your connection and hit Refresh.'; }
   } finally { if (btn){ btn.disabled=false; btn.style.opacity='1'; } }
 }
-function renderEconAll(){ renderEconCal(); renderEconIndicator('CPI','econ-cpi'); renderEconIndicator('NFP','econ-nfp'); renderEconIndicator('FOMC','econ-fomc'); }
+function renderEconAll(){ renderEconCal(); renderEconIndicator('CPI','econ-cpi'); renderEconIndicator('NFP','econ-nfp'); renderEconIndicator('FOMC','econ-fomc'); _econTickCountdowns(); }
 
 function _econPct(v){ if(v==null) return '<span style="color:var(--muted)">—</span>'; const c=v>0?'var(--green)':v<0?'var(--red)':'var(--muted)'; return `<span style="color:${c};font-weight:600">${(v>0?'+':'')+v}%</span>`; }
 // Actual value color: green if it beat forecast, red if it missed, neutral otherwise.
@@ -4007,10 +4010,10 @@ function renderEconDailyGain(){
 function _econShort(d){ const m=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; const p=(d||'').split('-'); return p.length===3 ? (m[+p[1]-1]+" '"+p[0].slice(2)) : d; }
 
 // Paired Actual (accent) vs Forecast (grey) bars with the value printed above each bar.
-function econChart(series, fmt){
-  const vals = series.flatMap(s=>[s.actual,s.forecast]).filter(v=>typeof v==='number');
-  if(!vals.length) return '<div style="color:var(--muted);font-size:12px;padding:16px">No chart data yet.</div>';
-  const hi = Math.max(...vals), lo = Math.min(0, ...vals), span=(hi-lo)||1, H=150;
+function econChart(series, fmt, upcoming){
+  const vals = series.flatMap(s=>[s.actual,s.forecast]).concat((upcoming&&typeof upcoming.forecast==='number')?[upcoming.forecast]:[]).filter(v=>typeof v==='number');
+  if(!vals.length && !upcoming) return '<div style="color:var(--muted);font-size:12px;padding:16px">No chart data yet.</div>';
+  const hi = Math.max(...vals,0), lo = Math.min(0, ...vals), span=(hi-lo)||1, H=150;
   const ac = (typeof themeAccent==='function') ? themeAccent() : '#2dd4bf';
   const barH = v => (typeof v!=='number') ? 0 : Math.max(2, ((v-lo)/span)*H);
   const oneBar = (v,color) => (typeof v!=='number')
@@ -4024,12 +4027,35 @@ function econChart(series, fmt){
       <div style="display:flex;align-items:flex-end;gap:5px;height:${H+24}px">${oneBar(s.actual,ac)}${oneBar(s.forecast,'rgba(255,255,255,0.32)')}</div>
       <div style="font-size:10px;color:var(--muted);font-family:var(--fd);white-space:nowrap">${s.label}</div>
     </div>`).join('');
-  return `<div style="overflow-x:auto;padding:6px 2px"><div style="display:flex;gap:12px;align-items:flex-end;min-width:min-content">${cols}</div></div>
+  // Rightmost column = the NEXT (not-yet-released) event: forecast bar only, its date, and a live countdown.
+  const upCol = upcoming ? `
+    <div style="display:flex;flex-direction:column;align-items:center;gap:7px;min-width:88px;border-left:1px dashed var(--border2);padding-left:14px;margin-left:2px">
+      <div style="display:flex;align-items:flex-end;gap:5px;height:${H+24}px"><div style="width:18px"></div>${oneBar(upcoming.forecast,'rgba(255,255,255,0.32)')}</div>
+      <div style="font-size:10px;color:var(--accent2);font-family:var(--fd);white-space:nowrap;font-weight:700">${upcoming.label}</div>
+      <div class="econ-cd" data-cd="${upcoming.datetime||''}" style="font-size:9.5px;color:var(--accent2);font-family:var(--fd);white-space:nowrap">…</div>
+      <div style="font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em">next release</div>
+    </div>` : '';
+  return `<div style="overflow-x:auto;padding:6px 2px"><div style="display:flex;gap:12px;align-items:flex-start;min-width:min-content">${cols}${upCol}</div></div>
     <div style="display:flex;gap:18px;justify-content:center;margin-top:10px;font-size:11px;color:var(--muted)">
       <span><span style="display:inline-block;width:11px;height:11px;background:${ac};border-radius:2px;vertical-align:-1px"></span> Actual</span>
       <span><span style="display:inline-block;width:11px;height:11px;background:rgba(255,255,255,0.32);border-radius:2px;vertical-align:-1px"></span> Forecast</span>
     </div>`;
 }
+// Live countdown to a release datetime.
+function _econFmtCountdown(target){
+  const t=new Date(target).getTime(); if(isNaN(t)) return '';
+  let ms=t-Date.now(); if(ms<=0) return 'now';
+  const d=Math.floor(ms/86400000); ms-=d*86400000;
+  const h=Math.floor(ms/3600000); ms-=h*3600000;
+  const m=Math.floor(ms/60000); ms-=m*60000; const s=Math.floor(ms/1000);
+  if(d>0) return `in ${d}d ${h}h ${m}m`;
+  if(h>0) return `in ${h}h ${m}m ${s}s`;
+  return `in ${m}m ${s}s`;
+}
+function _econTickCountdowns(){
+  document.querySelectorAll('#page-econ .econ-cd').forEach(el=>{ const t=el.getAttribute('data-cd'); if(t) el.textContent='Coming '+_econFmtCountdown(t); });
+}
+let _econCdTimer=null;
 
 const ECON_META = {
   CPI:  { title:'Inflation Rate YoY', name:'Inflation Rate — CPI (YoY)', fmt:v=>(v==null?'—':v+'%'), desc:'US consumer-price inflation, year-over-year. A hotter-than-forecast print pushes the Fed toward higher-for-longer rates and usually pressures stocks.' },
@@ -4046,6 +4072,8 @@ function renderEconIndicator(cat, containerId){
   const today = (typeof drToday==='function')?drToday():new Date().toISOString().slice(0,10);
   const past = uniq.filter(e=>e.actual!=null);
   const next = uniq.filter(e=>e.actual==null && e.date>=today).sort((a,b)=>a.date.localeCompare(b.date))[0];
+  const _MON3=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const upcoming = next ? { label:(()=>{ const p=(next.date||'').split('-'); return p.length===3?(+p[2]+' '+_MON3[+p[1]-1]):next.date; })(), forecast:next.forecast, datetime: next.datetime || (next.date+'T13:30:00Z') } : null;
   const series = past.slice(-12).map(e=>({ label:_econShort(e.date), actual:e.actual, forecast:e.forecast }));
   const rows = [...past].reverse().slice(0,15).map(e=>`
     <tr>
@@ -4065,8 +4093,8 @@ function renderEconIndicator(cat, containerId){
       <div style="font-size:12px;color:var(--muted);margin-top:7px;line-height:1.55">${meta.desc}</div>
     </div>
     <div style="background:var(--surface);border:0.5px solid var(--border2);border-radius:10px;padding:16px 14px;margin-bottom:14px">
-      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;padding-left:2px">Actual vs Forecast — last ${series.length} releases</div>
-      ${econChart(series, meta.fmt)}
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;padding-left:2px">Actual vs Forecast — last ${series.length} releases${upcoming?' + next':''}</div>
+      ${econChart(series, meta.fmt, upcoming)}
     </div>
     <div style="background:var(--surface);border:0.5px solid var(--border2);border-radius:10px;overflow:hidden">
       <table class="econ-tbl"><thead><tr><th>Date</th><th>Actual</th><th>Forecast</th><th>Prior</th><th>S&amp;P 500</th><th>Nasdaq</th></tr></thead><tbody>${rows}</tbody></table>
