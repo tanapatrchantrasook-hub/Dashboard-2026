@@ -22,15 +22,24 @@ body.theme-teal{
   --text:#e6edf3;--muted:#8b949e;--accent:#2dd4bf;--accent2:#5eead4;
   --green:#3fb950;--red:#f85149;
 }
+/* Paint <html> the active theme's --bg so no stray page-canvas colour shows past the zoom-scaled body. */
+html{background:#000000}
+html:has(body.theme-teal){background:#0e1117}
 body{background:var(--bg);color:var(--text);font-family:var(--fb);font-size:13px;margin:0;zoom:0.92}
-.layout{display:flex;min-height:100vh}
+/* Body is zoom:0.92, so 100vh scales to ~92% of the window; divide by the zoom to reach the true window height. */
+.layout{display:flex;min-height:calc(100vh / 0.92)}
 
 /* SIDEBAR */
-.sidebar{width:210px;min-width:210px;background:var(--surface);border-right:0.5px solid var(--border2);padding:20px 0;display:flex;flex-direction:column;flex-shrink:0;position:sticky;top:0;height:100vh;overflow-y:auto}
+.sidebar{width:210px;min-width:210px;background:var(--surface);border-right:0.5px solid var(--border2);padding:20px 0;display:flex;flex-direction:column;flex-shrink:0;position:sticky;top:0;height:calc(100vh / 0.92);overflow-y:auto}
 .sidebar-logo{padding:0 18px 20px;border-bottom:0.5px solid var(--border);margin-bottom:12px}
 .logo-main{font-family:var(--fd);font-size:13px;font-weight:700;letter-spacing:0.04em}
 .logo-accent{color:var(--accent)}
 .logo-sub{font-size:11px;color:var(--muted);letter-spacing:0.08em;margin-top:2px}
+/* Portfolio switcher (TG / FT) — two independent portfolios sharing this dashboard */
+.portfolio-switch{display:flex;gap:6px;margin-top:11px}
+.pf-btn{flex:1;padding:5px 0;border:1px solid var(--border2);background:transparent;color:var(--muted);border-radius:6px;font-family:var(--fd);font-size:11px;font-weight:700;letter-spacing:0.1em;cursor:pointer;transition:all .15s}
+.pf-btn:hover{color:var(--text);border-color:var(--accent2)}
+.pf-btn.active{background:var(--accent);color:#0a0a0c;border-color:var(--accent)}
 .nav-item{display:flex;align-items:center;gap:10px;padding:10px 18px;font-size:13px;color:var(--muted);cursor:pointer;transition:all .15s;border-left:2px solid transparent;line-height:1.3}
 .nav-item:hover{color:var(--text);background:rgba(255,255,255,0.04)}
 .nav-item.active{color:var(--text);border-left-color:var(--accent);background:rgba(224,92,42,0.07)}
@@ -286,6 +295,10 @@ input[type=file]{display:none}
   <div class="sidebar-logo">
     <div class="logo-main">PETE'S <span class="logo-accent">TRADE</span> DASH</div>
     <div class="logo-sub">2026 · ROLLING</div>
+    <div class="portfolio-switch" id="portfolio-switch">
+      <button class="pf-btn active" id="pf-btn-TG" onclick="switchPortfolio('TG')" title="TG — your main portfolio">TG</button>
+      <button class="pf-btn" id="pf-btn-FT" onclick="switchPortfolio('FT')" title="FT — separate portfolio with its own trades &amp; performance">FT</button>
+    </div>
   </div>
   <div class="nav-item" id="nav-news" onclick="switchPage('news')"><i class="ti ti-news"></i> News &amp; Watchlist</div>
 
@@ -7023,8 +7036,67 @@ function scheduleSave() {
   _saveTimer = setTimeout(persistData, 400);
 }
 
+// ── PORTFOLIO SWITCHER (TG / FT) ──────────────────────────────
+// Two independent portfolios share this dashboard. PER-PORTFOLIO data: trades,
+// Trades-of-the-Day, report cards, goals, and account/starting balance (→ their
+// own Performance). Everything else (watchlist, news, playbook, screener, econ,
+// studies, routine templates…) is SHARED.
+// Storage is backward-compatible + non-duplicating: the ACTIVE portfolio's data
+// stays at the top level of the save file (so existing load/save code and other
+// computers keep working), and only the INACTIVE portfolio(s) are stored under
+// the new `inactivePortfolios` key.
+let activePortfolio = 'TG';
+const _PORTFOLIO_NAMES = ['TG','FT'];
+const _portfolioStash = { TG:null, FT:null };   // holds the INACTIVE portfolio(s)' data
+function _defaultSettings(){ return { dailyTarget:'', dailyLoss:'', startingBalance:'' }; }
+function _emptyPortfolio(){ return { trades:[], todTrades:[], reportCards:{}, goals:[], nextGoalId:1, tradingSettings:_defaultSettings() }; }
+function _setArr(arr, vals){ arr.length = 0; if(Array.isArray(vals)) for(const v of vals) arr.push(v); }
+function _setObj(obj, vals){ for(const k in obj) delete obj[k]; if(vals && typeof vals==='object') Object.assign(obj, vals); }
+function _snapshotActivePortfolio(){
+  return { trades:trades.slice(), todTrades:todTrades.slice(), reportCards:Object.assign({},reportCards),
+           goals:goals.slice(), nextGoalId:nextGoalId, tradingSettings:Object.assign({},tradingSettings) };
+}
+function _hydratePortfolio(p){
+  p = p || _emptyPortfolio();
+  _setArr(trades, p.trades); _setArr(todTrades, p.todTrades); _setObj(reportCards, p.reportCards);
+  _setArr(goals, p.goals); nextGoalId = p.nextGoalId || 1; _setObj(tradingSettings, p.tradingSettings || _defaultSettings());
+}
+function updatePortfolioButtons(){
+  _PORTFOLIO_NAMES.forEach(p=>{ const b=document.getElementById('pf-btn-'+p); if(b) b.classList.toggle('active', p===activePortfolio); });
+}
+function _renderActivePortfolio(){
+  try{ renderTradeTable(); }catch(e){}
+  try{ renderTradesOfDay(); }catch(e){}
+  try{ renderGoals(); }catch(e){}
+  try{ rcPopulateFields(); }catch(e){}
+  try{ if(typeof renderActivePositions==='function') renderActivePositions(); }catch(e){}
+  try{ if(typeof renderTmDailyPlan==='function') renderTmDailyPlan(); }catch(e){}
+  try{ if(typeof renderSessionPanel==='function') renderSessionPanel(); }catch(e){}
+  try{ if(typeof updateDailyStopBanner==='function') updateDailyStopBanner(); }catch(e){}
+  try{ const sb=document.getElementById('perf-start-balance'); if(sb && document.activeElement!==sb) sb.value = tradingSettings.startingBalance||''; }catch(e){}
+  try{
+    const pp=document.getElementById('page-perf');
+    if(pp && pp.classList.contains('active')){
+      renderPerformance(); renderMissedTradesPerf(); renderSetupPerformance(); renderBreakEven();
+      renderSessionStats(trades,'session-stats-journal'); renderSessionStats(todTrades,'session-stats-tod');
+    }
+  }catch(e){}
+}
+function switchPortfolio(target){
+  if(!_PORTFOLIO_NAMES.includes(target) || target===activePortfolio) return;
+  _portfolioStash[activePortfolio] = _snapshotActivePortfolio();   // stash the current active portfolio
+  activePortfolio = target;
+  _hydratePortfolio(_portfolioStash[target] || _emptyPortfolio()); // load the target into the live vars
+  _portfolioStash[target] = null;                                  // target is now live (module vars are its source of truth)
+  updatePortfolioButtons();
+  _renderActivePortfolio();
+  if(typeof scheduleSave==='function') scheduleSave();
+}
+
 function collectData() {
   return {
+    activePortfolio: activePortfolio,
+    inactivePortfolios: (function(){ const o={}; for(const p of _PORTFOLIO_NAMES){ if(p!==activePortfolio) o[p] = _portfolioStash[p] || _emptyPortfolio(); } return o; })(),
     trades: trades,
     goals: goals,
     nextGoalId: nextGoalId,
@@ -7319,6 +7391,16 @@ async function loadSavedData() {
       });
       renderPlaybook2();
     }
+
+    // ── PORTFOLIO SWITCHER: the top-level data restored above is the ACTIVE portfolio;
+    // load the inactive portfolio(s) from `inactivePortfolios` (fresh empty FT on first run). ──
+    activePortfolio = (d.activePortfolio === 'FT') ? 'FT' : 'TG';
+    _portfolioStash.TG = null; _portfolioStash.FT = null;
+    if (d.inactivePortfolios && typeof d.inactivePortfolios === 'object') {
+      for (const p of _PORTFOLIO_NAMES) { if (p !== activePortfolio && d.inactivePortfolios[p]) _portfolioStash[p] = d.inactivePortfolios[p]; }
+    }
+    for (const p of _PORTFOLIO_NAMES) { if (p !== activePortfolio && !_portfolioStash[p]) _portfolioStash[p] = _emptyPortfolio(); }
+    try { updatePortfolioButtons(); } catch(e) {}
 
     try { updateDailyStopBanner(); } catch(e) {}
     dataReady = true; // data is now safely loaded — saving is allowed from here on
