@@ -205,7 +205,18 @@ app.get('/api/data', async (req, res) => {
 });
 
 // Save all data (bulk save) — local file immediately, cloud push coalesced
-const _count = d => (d ? ((d.trades||[]).length + (d.todTrades||[]).length) : 0);
+// Counts trades across ALL portfolios (top-level = active portfolio, plus any under
+// inactivePortfolios), so switching to an empty portfolio (e.g. FT) isn't mistaken for
+// a data-wipe by the empty-overwrite guard below.
+const _count = d => {
+  if (!d) return 0;
+  let n = (d.trades||[]).length + (d.todTrades||[]).length;
+  const inact = d.inactivePortfolios;
+  if (inact && typeof inact === 'object') {
+    for (const k in inact) { const p = inact[k]; if (p) n += (p.trades||[]).length + (p.todTrades||[]).length; }
+  }
+  return n;
+};
 
 // ── AUTOMATIC ROLLING BACKUPS ─────────────────────────────────
 // Timestamped local backups had stopped in June, leaving no recovery history.
