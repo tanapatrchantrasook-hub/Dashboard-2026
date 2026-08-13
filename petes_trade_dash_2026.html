@@ -4,6 +4,19 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pete's Trade Dash 2026</title>
+<script>
+/* Opened directly as a file:// page, the dashboard can't reach its server, so nothing
+   saves (the red "NOT SAVING" banner). If the server is actually running, bounce to it
+   so saving always works. If it's not running, stay put and let the banner explain. */
+(function(){
+  if (location.protocol !== 'file:') return;
+  try {
+    fetch('http://localhost:3000/api/data', { method:'HEAD', mode:'no-cors', cache:'no-store' })
+      .then(function(){ location.replace('http://localhost:3000/' + (location.hash || '')); })
+      .catch(function(){ /* server not running — remain on file://; the banner will guide the user */ });
+  } catch(e){ /* ignore */ }
+})();
+</script>
 <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
