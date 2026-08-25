@@ -644,6 +644,7 @@ input[type=file]{display:none}
     <div class="tl-page">
       <div class="subtab-bar">
         <div class="subtab active" onclick="switchSubtab(this,'daily-watch')">Daily Watchlist</div>
+        <div class="subtab" onclick="switchSubtab(this,'earnings');loadEarnings()">Earnings</div>
         <div class="subtab" onclick="switchSubtab(this,'live-news');loadLiveNews()">Live News</div>
         <div class="subtab" onclick="switchSubtab(this,'breaking');loadBreakingNews()"><span style="color:#e05c3a">●</span> Breaking</div>
         <div class="subtab" onclick="switchSubtab(this,'x-feeds')">𝕏 Feeds</div>
@@ -882,6 +883,50 @@ input[type=file]{display:none}
             </div>
           </div>
 
+        </div>
+      </div>
+
+      <!-- EARNINGS SUBTAB -->
+      <style>
+      #page-news .econ-cal-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+      #page-news .econ-cal-title{font-family:var(--fd);font-size:16px;font-weight:700;color:var(--text);min-width:170px;text-align:center}
+      #page-news .econ-cal-nav{background:var(--surface);border:0.5px solid var(--border2);color:var(--text);width:30px;height:30px;border-radius:6px;cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center}
+      #page-news .econ-cal-nav:hover{border-color:var(--accent);color:var(--accent2)}
+      #page-news .econ-cal-todaybtn{background:var(--surface);border:0.5px solid var(--border2);color:var(--accent2);padding:7px 15px;border-radius:6px;cursor:pointer;font-size:12px;font-family:var(--fb)}
+      #page-news .econ-cal-todaybtn:hover{border-color:var(--accent)}
+      #page-news .econ-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+      #page-news .econ-cal-dow{font-size:10px;letter-spacing:0.05em;text-transform:uppercase;color:var(--muted);text-align:center;padding:4px 0;font-family:var(--fd)}
+      #page-news .econ-cal-cell{min-height:96px;background:var(--surface);border:0.5px solid var(--border2);border-radius:8px;padding:6px 6px 7px;display:flex;flex-direction:column;gap:4px}
+      #page-news .econ-cal-empty{background:transparent;border:none;min-height:0}
+      #page-news .econ-cal-today{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+      #page-news .econ-cal-daynum{font-size:12px;color:var(--muted);font-family:var(--fd);font-weight:700}
+      #page-news .econ-cal-today .econ-cal-daynum{color:var(--accent2)}
+      #page-news .econ-cal-events{display:flex;flex-direction:column;gap:3px;overflow:hidden}
+      #page-news .econ-cal-badge{font-size:10px;padding:2px 5px;border-radius:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--fd);cursor:pointer}
+      #page-news .econ-cal-add{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:15px;line-height:1;padding:0 3px;opacity:0.3;flex-shrink:0}
+      #page-news .econ-cal-cell:hover .econ-cal-add{opacity:0.75}
+      #page-news .econ-cal-add:hover{opacity:1;color:var(--accent2)}
+      #page-news .econ-cal-note{font-size:10px;padding:2px 5px;border-radius:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--fb);cursor:pointer;background:rgba(255,255,255,0.07);border-left:2px solid var(--accent2);color:var(--text)}
+      #page-news .econ-cal-note:hover{background:rgba(255,255,255,0.14)}
+      #page-news .econ-cal-legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;font-size:11px;color:var(--muted)}
+      #page-news .econ-cal-legend span.dot{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:-1px;margin-right:5px}
+      #page-news .earn-up-row{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:0.5px solid var(--border);font-size:12.5px}
+      #page-news .earn-up-row:last-child{border-bottom:none}
+      #page-news .earn-tk{font-family:var(--fd);font-weight:700;color:var(--accent2);min-width:56px;cursor:pointer}
+      #page-news .earn-tk:hover{text-decoration:underline}
+      </style>
+      <div class="subtab-content" id="subtab-earnings">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+          <div>
+            <div style="font-family:var(--fd);font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text)">Earnings Calendar</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px">Next earnings dates for the tickers on your <span style="color:var(--accent2)">Stock Screener</span> list. Click any day to add a note or event. <span id="earn-asof" style="color:var(--accent2)"></span></div>
+          </div>
+          <button onclick="loadEarnings(true)" id="earn-refresh-btn" style="display:flex;align-items:center;gap:6px;padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-family:var(--fb);font-weight:600"><i class="ti ti-refresh" style="font-size:13px"></i> Refresh</button>
+        </div>
+        <div id="earn-cal-list" class="empty-log" style="padding:40px 20px">Loading earnings…</div>
+        <div style="margin-top:26px">
+          <div style="font-family:var(--fd);font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--muted);margin-bottom:8px">Upcoming — next 60 days</div>
+          <div id="earn-upcoming" style="background:var(--surface);border:0.5px solid var(--border2);border-radius:8px"></div>
         </div>
       </div>
 
@@ -1428,6 +1473,7 @@ function switchPage(key){
     const et=document.querySelector('#page-econ .subtab[onclick*="econ-cal"]'); if(et) et.classList.add('active');
     const ec=document.getElementById('subtab-econ-cal'); if(ec) ec.classList.add('active');
     loadEconCalendar();
+    if(typeof loadEarnings==='function') loadEarnings();   // overlay screener-stock earnings on the grid
     // Auto-refresh every 5 min while the page is open, so new releases appear on their own.
     clearInterval(_econTimer);
     _econTimer=setInterval(()=>{ const p=document.getElementById('page-econ'); if(p && p.classList.contains('active')) loadEconCalendar(); else clearInterval(_econTimer); }, 5*60*1000);
@@ -4168,6 +4214,8 @@ function renderEconCal(){
   const today = (typeof drToday==='function')?drToday():new Date().toISOString().slice(0,10);
   const evByDate = {};
   (econData||[]).filter(e=>ECON_CAL_TITLES[e.title]).forEach(e=>{ (evByDate[e.date]=evByDate[e.date]||[]).push(e); });
+  const earnByDate = {};   // screener-stock earnings, same source as the News → Earnings calendar
+  if(typeof earnData!=='undefined') Object.entries(earnData).forEach(([s,i])=>{ if(i&&i.date){ (earnByDate[i.date]=earnByDate[i.date]||[]).push([s,i]); } });
   const startDow = new Date(Date.UTC(y,m,1)).getUTCDay();
   const daysIn = new Date(Date.UTC(y,m+1,0)).getUTCDate();
   const MN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -4177,6 +4225,7 @@ function renderEconCal(){
   for(let d=1; d<=daysIn; d++){
     const ds = y+'-'+pad(m+1)+'-'+pad(d);
     const badges = (evByDate[ds]||[]).map(_econCalBadge).join('');
+    const earnBadges = (earnByDate[ds]||[]).sort((a,b)=>a[0].localeCompare(b[0])).map(([s,i])=>(typeof _earnBadge==='function'?_earnBadge(s,i):'')).join('');
     const notes = (typeof econNotes!=='undefined' && econNotes[ds]) ? econNotes[ds] : [];
     const noteBadges = notes.map((n,i)=>`<div class="econ-cal-note" onclick="event.stopPropagation();econEditNote('${ds}',${i})" title="${_escHtml(n)} — click to edit / delete"><i class="ti ti-note" style="font-size:10px;vertical-align:-1px"></i> ${_escHtml(n)}</div>`).join('');
     cells += `<div class="econ-cal-cell${ds===today?' econ-cal-today':''}">
@@ -4184,11 +4233,12 @@ function renderEconCal(){
         <div class="econ-cal-daynum">${d}</div>
         <button class="econ-cal-add" onclick="event.stopPropagation();econAddNote('${ds}')" title="Add a note / event">+</button>
       </div>
-      <div class="econ-cal-events">${badges}${noteBadges}</div>
+      <div class="econ-cal-events">${badges}${earnBadges}${noteBadges}</div>
     </div>`;
   }
   const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(x=>`<div class="econ-cal-dow">${x}</div>`).join('');
-  const legend = Object.entries({FOMC:'FOMC rate',CPI:'CPI',NFP:'Non-Farm',PPI:'PPI'}).map(([k,lbl])=>`<span><span class="dot" style="background:${ECON_CAL_COLORS[k]}"></span>${lbl}</span>`).join('');
+  const legend = Object.entries({FOMC:'FOMC rate',CPI:'CPI',NFP:'Non-Farm',PPI:'PPI'}).map(([k,lbl])=>`<span><span class="dot" style="background:${ECON_CAL_COLORS[k]}"></span>${lbl}</span>`).join('')
+    + `<span><span class="dot" style="background:var(--accent2)"></span>Earnings (screener)</span>`;
   box.innerHTML = `
     <div class="econ-cal-head">
       <button class="econ-cal-nav" onclick="econCalShift(-1)" title="Previous month">‹</button>
@@ -4198,6 +4248,122 @@ function renderEconCal(){
     </div>
     <div class="econ-cal-grid">${dow}${cells}</div>
     <div class="econ-cal-legend">${legend}<span style="color:var(--muted)">· click an event to open its page</span></div>`;
+}
+
+// ── EARNINGS CALENDAR (News & Watchlist) — next earnings for the Stock Screener tickers ──
+let earnData = {};        // { SYM: {date,ts,estimate,epsEst,epsActual,name} }
+let earnCalMonth = null;
+let earnNotes = {};       // { 'YYYY-MM-DD': ['note',...] } — the user's own notes, persisted + synced
+let _earnLoadedTs = 0;
+function renderEarnAll(){
+  if(typeof renderEarnCal==='function') renderEarnCal();
+  if(typeof renderEarnUpcoming==='function') renderEarnUpcoming();
+  if(typeof renderEconCal==='function' && document.getElementById('econ-cal-list')) renderEconCal();
+}
+function earnAddNote(ds){
+  const t = prompt('Add a note / event for ' + ((typeof fmtDMY==='function')?fmtDMY(ds):ds) + ':', '');
+  if(t===null) return; const v=t.trim(); if(!v) return;
+  (earnNotes[ds]=earnNotes[ds]||[]).push(v);
+  if(typeof scheduleSave==='function') scheduleSave();
+  renderEarnCal();
+}
+function earnEditNote(ds,i){
+  if(!earnNotes[ds] || earnNotes[ds][i]==null) return;
+  const t=prompt('Edit note / event (clear the text to delete):', earnNotes[ds][i]);
+  if(t===null) return; const v=t.trim();
+  if(!v){ earnNotes[ds].splice(i,1); if(!earnNotes[ds].length) delete earnNotes[ds]; }
+  else earnNotes[ds][i]=v;
+  if(typeof scheduleSave==='function') scheduleSave();
+  renderEarnCal();
+}
+async function loadEarnings(force){
+  const btn=document.getElementById('earn-refresh-btn');
+  const box=document.getElementById('earn-cal-list');
+  const syms=(typeof screenerSymbols!=='undefined'?screenerSymbols:[]).slice();
+  if(!syms.length){ earnData={}; renderEarnAll();
+    const a=document.getElementById('earn-asof'); if(a) a.textContent='— add tickers on the Stock Screener page'; return; }
+  if(!force && _earnLoadedTs && (Date.now()-_earnLoadedTs)<5*60*1000){ renderEarnAll(); return; }   // reuse recent data
+  if(btn && force){ btn.disabled=true; btn.style.opacity='0.6'; }
+  try{
+    const r=await fetch('/api/earnings?symbols='+encodeURIComponent(syms.join(','))+'&_cb='+Date.now(),{cache:'no-store'});
+    const j=await r.json();
+    if(j && j.earnings){ earnData=j.earnings; _earnLoadedTs=Date.now(); }
+    const got=Object.keys(earnData||{}).length;
+    const a=document.getElementById('earn-asof'); if(a) a.textContent = got ? '' : '(no earnings dates returned yet — try Refresh)';
+    renderEarnAll();
+  }catch(e){ if(box && !Object.keys(earnData||{}).length){ box.className=''; box.textContent='Could not load earnings — check your connection and hit Refresh.'; } }
+  finally{ if(btn){ btn.disabled=false; btn.style.opacity='1'; } }
+}
+function earnCalShift(delta){ if(!earnCalMonth) return; let {y,m}=earnCalMonth; m+=delta; if(m<0){m=11;y--;} if(m>11){m=0;y++;} earnCalMonth={y,m}; renderEarnCal(); }
+function earnCalToday(){ const t=(typeof drToday==='function')?drToday():new Date().toISOString().slice(0,10); const p=t.split('-'); earnCalMonth={y:+p[0],m:+p[1]-1}; renderEarnCal(); }
+function earnGoTicker(sym){                                              // jump to Live News and pull this ticker's headlines
+  const bar=document.querySelector('#page-news .subtab-bar');
+  const tab=bar?Array.from(bar.querySelectorAll('.subtab')).find(t=>/Live News/i.test(t.textContent)):null;
+  if(tab && typeof switchSubtab==='function') switchSubtab(tab,'live-news');
+  const inp=document.getElementById('ln-ticker-input'); if(inp) inp.value=sym;
+  if(typeof searchTickerNews==='function') searchTickerNews();
+  if(typeof loadLiveNews==='function') loadLiveNews();
+}
+function _epsFmt(v){ return (v==null)?'—':(Math.round(v*100)/100).toString(); }
+function _earnBadge(sym,info){
+  const est=info.estimate?'~':'';
+  const a=_epsFmt(info.epsActual), e=_epsFmt(info.epsEst);
+  const parens=(info.epsActual!=null||info.epsEst!=null)?` (${a} / ${e})`:'';
+  const tip=(info.name||sym)+' — Earnings '+(info.estimate?'(est date) ':'')+info.date+' · EPS actual '+a+' / est '+e;
+  return `<div class="econ-cal-badge" onclick="event.stopPropagation();earnGoTicker('${sym}')" title="${_escHtml(tip)}" style="background:rgba(224,92,42,0.14);border-left:2px solid var(--accent2)"><span style="color:var(--accent2);font-weight:700">${est}${sym}</span> <span style="color:var(--text)">Earnings</span><span style="color:var(--muted)">${parens}</span></div>`;
+}
+function renderEarnCal(){
+  const box=document.getElementById('earn-cal-list'); if(!box) return;
+  box.className='';
+  if(!earnCalMonth){ const t=(typeof drToday==='function')?drToday():new Date().toISOString().slice(0,10); const p=t.split('-'); earnCalMonth={y:+p[0],m:+p[1]-1}; }
+  const {y,m}=earnCalMonth;
+  const today=(typeof drToday==='function')?drToday():new Date().toISOString().slice(0,10);
+  const byDate={};
+  Object.entries(earnData||{}).forEach(([sym,info])=>{ if(info && info.date){ (byDate[info.date]=byDate[info.date]||[]).push([sym,info]); } });
+  const startDow=new Date(Date.UTC(y,m,1)).getUTCDay();
+  const daysIn=new Date(Date.UTC(y,m+1,0)).getUTCDate();
+  const MN=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const pad=n=>String(n).padStart(2,'0');
+  let cells='';
+  for(let i=0;i<startDow;i++) cells+='<div class="econ-cal-cell econ-cal-empty"></div>';
+  for(let d=1;d<=daysIn;d++){
+    const ds=y+'-'+pad(m+1)+'-'+pad(d);
+    const badges=(byDate[ds]||[]).sort((a,b)=>a[0].localeCompare(b[0])).map(([sym,info])=>_earnBadge(sym,info)).join('');
+    const notes=earnNotes[ds]||[];
+    const noteBadges=notes.map((n,i)=>`<div class="econ-cal-note" onclick="event.stopPropagation();earnEditNote('${ds}',${i})" title="${_escHtml(n)} — click to edit / delete"><i class="ti ti-note" style="font-size:10px;vertical-align:-1px"></i> ${_escHtml(n)}</div>`).join('');
+    cells+=`<div class="econ-cal-cell${ds===today?' econ-cal-today':''}">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div class="econ-cal-daynum">${d}</div>
+        <button class="econ-cal-add" onclick="event.stopPropagation();earnAddNote('${ds}')" title="Add a note / event">+</button>
+      </div>
+      <div class="econ-cal-events">${badges}${noteBadges}</div>
+    </div>`;
+  }
+  const dow=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(x=>`<div class="econ-cal-dow">${x}</div>`).join('');
+  const n=Object.keys(earnData||{}).length;
+  const legend=`<span><span class="dot" style="background:var(--accent2)"></span>Earnings date</span><span>~ = estimated date · (actual / est) EPS</span><span style="color:var(--muted)">· ${n} screener ticker${n===1?'':'s'} tracked · click a ticker for its news</span>`;
+  box.innerHTML=`
+    <div class="econ-cal-head">
+      <button class="econ-cal-nav" onclick="earnCalShift(-1)" title="Previous month">‹</button>
+      <div class="econ-cal-title">${MN[m]} ${y}</div>
+      <button class="econ-cal-nav" onclick="earnCalShift(1)" title="Next month">›</button>
+      <button class="econ-cal-todaybtn" onclick="earnCalToday()">Today</button>
+    </div>
+    <div class="econ-cal-grid">${dow}${cells}</div>
+    <div class="econ-cal-legend">${legend}</div>`;
+}
+function renderEarnUpcoming(){
+  const box=document.getElementById('earn-upcoming'); if(!box) return;
+  const today=(typeof drToday==='function')?drToday():new Date().toISOString().slice(0,10);
+  const h=new Date(); h.setDate(h.getDate()+60);
+  const hs=h.getFullYear()+'-'+String(h.getMonth()+1).padStart(2,'0')+'-'+String(h.getDate()).padStart(2,'0');
+  const rows=Object.entries(earnData||{}).filter(([s,i])=>i&&i.date&&i.date>=today&&i.date<=hs).sort((a,b)=>a[1].date.localeCompare(b[1].date));
+  if(!rows.length){ box.innerHTML='<div style="padding:16px;color:var(--muted);font-size:12px">No screener tickers report in the next 60 days'+(Object.keys(earnData||{}).length?'':' — add tickers on the Stock Screener page')+'.</div>'; return; }
+  box.innerHTML=rows.map(([sym,info])=>{
+    const dd=(typeof fmtDMY==='function')?fmtDMY(info.date):info.date;
+    const eps=(info.epsEst!=null||info.epsActual!=null)?`<span style="color:var(--muted);white-space:nowrap">EPS ${_epsFmt(info.epsActual)} / ${_epsFmt(info.epsEst)} <span style="font-size:10px">(act/est)</span></span>`:'';
+    return `<div class="earn-up-row"><span class="earn-tk" onclick="earnGoTicker('${sym}')">${sym}</span><span style="color:var(--text);min-width:130px">${dd}${info.estimate?' <span style="color:var(--muted)">(est)</span>':''}</span><span style="flex:1;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escHtml(info.name||'')}</span>${eps}</div>`;
+  }).join('');
 }
 
 // ── TRADES OF THE DAY ────────────────────────────────────────
@@ -7147,6 +7313,7 @@ function collectData() {
     rcRoutineRows: RC_ROUTINE_ROWS,
     rcMgmtRows: RC_MGMT_ROWS,
     econNotes: econNotes,
+    earnNotes: (typeof earnNotes!=='undefined' ? earnNotes : {}),
     todTrades: todTrades,
     categoriesData: categories.map(cat => ({
       id: cat.id, number: cat.number, title: cat.title,
@@ -7344,6 +7511,7 @@ async function loadSavedData() {
     if (typeof d.uiZoomed === 'boolean') { uiZoomed = d.uiZoomed; applyZoom(); }
     // Restore user's calendar notes/events
     if (d.econNotes && typeof d.econNotes === 'object') Object.assign(econNotes, d.econNotes);
+    if (d.earnNotes && typeof d.earnNotes === 'object') Object.assign(earnNotes, d.earnNotes);
     // Restore Trades of the Day
     if (d.todTrades && d.todTrades.length) {
       todTrades.push(...d.todTrades);

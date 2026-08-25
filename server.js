@@ -530,6 +530,69 @@ app.get('/api/quote', async (req, res) => {
   catch (e) { res.json({ symbol, error: e.message }); }
 });
 
+// ── EARNINGS (News → Earnings calendar + Economic Calendar overlay) ──
+// Next earnings date for a set of symbols, with the analyst EPS estimate (and the actual
+// once reported). Rides the existing Yahoo v7 auth + cache.
+const _qsNum = x => (x && typeof x === 'object' && typeof x.raw === 'number') ? x.raw : (typeof x === 'number' ? x : null);
+const _earnDetCache = {};
+async function fetchEarningsDetail(symbol) {
+  const c = _earnDetCache[symbol];
+  if (c && Date.now() - c.ts < 30 * 60 * 1000) return c.d;
+  let d = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (!(await _yahooAuth(attempt === 1))) break;
+    try {
+      const url = 'https://query1.finance.yahoo.com/v10/finance/quoteSummary/' + encodeURIComponent(symbol) +
+        '?modules=earnings,calendarEvents&crumb=' + encodeURIComponent(_yCrumb);
+      const r = await fetch(url, { headers: { 'User-Agent': YUA, 'Cookie': _yCookie } });
+      if (r.ok) { const j = await r.json(); d = (j.quoteSummary && j.quoteSummary.result && j.quoteSummary.result[0]) || null; break; }
+      _yCrumb = ''; _yCookie = '';
+    } catch (e) { _yCrumb = ''; _yCookie = ''; }
+  }
+  _earnDetCache[symbol] = { d, ts: Date.now() };
+  return d;
+}
+app.get('/api/earnings', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const syms = (req.query.symbols || '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean).slice(0, 60);
+  const out = {};
+  const pad = n => String(n).padStart(2, '0');
+  const todayMid = new Date(); todayMid.setHours(0, 0, 0, 0);
+  await Promise.all(syms.map(async sym => {
+    try {
+      const q = await fetchV7Quote(sym);
+      if (!q) return;
+      const ts = q.earningsTimestamp || q.earningsTimestampStart || null;
+      if (!ts) return;
+      const d = new Date(ts * 1000);
+      let epsEst = (typeof q.epsForward === 'number') ? q.epsForward : null;
+      let epsActual = null;
+      try {
+        const det = await fetchEarningsDetail(sym);
+        const ce = det && det.calendarEvents && det.calendarEvents.earnings;
+        const ec = det && det.earnings && det.earnings.earningsChart;
+        const upEst = _qsNum(ce && ce.earningsAverage);
+        const curEst = _qsNum(ec && ec.currentQuarterEstimate);
+        if (upEst != null) epsEst = upEst; else if (curEst != null) epsEst = curEst;
+        if (d.getTime() < todayMid.getTime() && ec && Array.isArray(ec.quarterly) && ec.quarterly.length) {
+          const last = ec.quarterly[ec.quarterly.length - 1];
+          const la = _qsNum(last && last.actual), le = _qsNum(last && last.estimate);
+          if (la != null) { epsActual = la; if (le != null) epsEst = le; }
+        }
+      } catch (e) {}
+      out[sym] = {
+        date: d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()),
+        ts,
+        estimate: !!q.isEarningsDateEstimate,
+        epsEst,
+        epsActual,
+        name: q.shortName || q.longName || sym
+      };
+    } catch (e) {}
+  }));
+  res.json({ earnings: out, syncedAt: Date.now() });
+});
+
 // ── ECONOMIC CALENDAR ─────────────────────────────────────────
 // Economic events (CPI / PPI / Non-Farm Payrolls / FOMC rate) with each date's
 // S&P 500 & Nasdaq close-to-close reaction. Event data comes from TradingView's
