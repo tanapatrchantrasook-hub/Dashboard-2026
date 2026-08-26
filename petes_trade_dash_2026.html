@@ -980,12 +980,14 @@ input[type=file]{display:none}
         <div class="subtab" onclick="switchSubtab(this,'econ-cpi')">CPI</div>
         <div class="subtab" onclick="switchSubtab(this,'econ-nfp')">Non-Farm</div>
         <div class="subtab" onclick="switchSubtab(this,'econ-fomc')">FOMC Rate</div>
+        <div class="subtab" onclick="switchSubtab(this,'econ-pce')">Core PCE</div>
         <div class="subtab" onclick="switchSubtab(this,'econ-dg');loadEconDailyGain()">Daily % Gain</div>
       </div>
       <div class="subtab-content active" id="subtab-econ-cal"><div id="econ-cal-list" class="empty-log" style="padding:40px 20px">Loading economic calendar…</div></div>
       <div class="subtab-content" id="subtab-econ-cpi"><div id="econ-cpi"></div></div>
       <div class="subtab-content" id="subtab-econ-nfp"><div id="econ-nfp"></div></div>
       <div class="subtab-content" id="subtab-econ-fomc"><div id="econ-fomc"></div></div>
+      <div class="subtab-content" id="subtab-econ-pce"><div id="econ-pce"></div></div>
       <div class="subtab-content" id="subtab-econ-dg"><div id="econ-dg"><div class="empty-log" style="padding:40px 20px">Loading daily % gains…</div></div></div>
     </div>
   </div>
@@ -4029,7 +4031,7 @@ async function loadEconCalendar(force){
     if (l && !econData){ l.className=''; l.textContent = 'Could not load the calendar — check your connection and hit Refresh.'; }
   } finally { if (btn){ btn.disabled=false; btn.style.opacity='1'; } }
 }
-function renderEconAll(){ renderEconCal(); renderEconIndicator('CPI','econ-cpi'); renderEconIndicator('NFP','econ-nfp'); renderEconIndicator('FOMC','econ-fomc'); _econTickCountdowns(); }
+function renderEconAll(){ renderEconCal(); renderEconIndicator('CPI','econ-cpi'); renderEconIndicator('NFP','econ-nfp'); renderEconIndicator('FOMC','econ-fomc'); renderEconIndicator('PCE','econ-pce'); _econTickCountdowns(); }
 
 function _econPct(v){ if(v==null) return '<span style="color:var(--muted)">—</span>'; const c=v>0?'var(--green)':v<0?'var(--red)':'var(--muted)'; return `<span style="color:${c};font-weight:600">${(v>0?'+':'')+v}%</span>`; }
 // Actual value color: green if it beat forecast, red if it missed, neutral otherwise.
@@ -4137,7 +4139,8 @@ let _econCdTimer=null;
 const ECON_META = {
   CPI:  { title:'Inflation Rate YoY', name:'Inflation Rate — CPI (YoY)', fmt:v=>(v==null?'—':v+'%'), desc:'US consumer-price inflation, year-over-year. A hotter-than-forecast print pushes the Fed toward higher-for-longer rates and usually pressures stocks.' },
   NFP:  { title:'Non Farm Payrolls', name:'Non-Farm Payrolls', fmt:v=>(v==null?'—':v+'K'), desc:'Monthly change in US jobs (ex-farm), in thousands. Big beats or misses swing rate expectations and risk sentiment fast.' },
-  FOMC: { title:'Fed Interest Rate Decision', name:'Fed Interest Rate Decision', fmt:v=>(v==null?'—':v+'%'), desc:'The FOMC target interest-rate decision — the anchor for every risk asset.' }
+  FOMC: { title:'Fed Interest Rate Decision', name:'Fed Interest Rate Decision', fmt:v=>(v==null?'—':v+'%'), desc:'The FOMC target interest-rate decision — the anchor for every risk asset.' },
+  PCE:  { title:'Core PCE Price Index YoY', name:'Core PCE Price Index (YoY)', fmt:v=>(v==null?'—':v+'%'), desc:'The Fed\'s preferred inflation gauge — core Personal Consumption Expenditures prices year-over-year (excludes food & energy). Weighs on rate policy even more than CPI.' }
 };
 // FOMC rate decisions don't appear in the calendar feed until ~2-3 weeks before a meeting,
 // so we fall back to the Fed's published meeting schedule to always show the next decision's
@@ -4192,7 +4195,7 @@ function renderEconIndicator(cat, containerId){
 // Month-grid calendar. Each day box shows badges for that day's key releases;
 // click a badge to jump to that indicator's page.
 const ECON_CAL_COLORS = { FOMC:'#e57368', CPI:'#2dd4bf', NFP:'#e0a52a', PPI:'#8b9cf7', PCE:'#c084fc' };
-const ECON_CAL_TITLES = { 'Fed Interest Rate Decision':{s:'FOMC',cat:'FOMC',sub:'econ-fomc'}, 'Non Farm Payrolls':{s:'NFP',cat:'NFP',sub:'econ-nfp'}, 'Inflation Rate YoY':{s:'CPI',cat:'CPI',sub:'econ-cpi'}, 'PPI YoY':{s:'PPI',cat:'PPI',sub:null}, 'Core PCE Price Index YoY':{s:'PCE',cat:'PCE',sub:null} };
+const ECON_CAL_TITLES = { 'Fed Interest Rate Decision':{s:'FOMC',cat:'FOMC',sub:'econ-fomc'}, 'Non Farm Payrolls':{s:'NFP',cat:'NFP',sub:'econ-nfp'}, 'Inflation Rate YoY':{s:'CPI',cat:'CPI',sub:'econ-cpi'}, 'PPI YoY':{s:'PPI',cat:'PPI',sub:null}, 'Core PCE Price Index YoY':{s:'PCE',cat:'PCE',sub:'econ-pce'} };
 let econCalMonth = null; // {y, m(0-based)}
 function econCalShift(delta){ if(!econCalMonth) return; let {y,m}=econCalMonth; m+=delta; if(m<0){m=11;y--;} if(m>11){m=0;y++;} econCalMonth={y,m}; renderEconCal(); }
 function econCalToday(){ const t=(typeof drToday==='function')?drToday():new Date().toISOString().slice(0,10); const p=t.split('-'); econCalMonth={y:+p[0],m:+p[1]-1}; renderEconCal(); }
@@ -4305,12 +4308,18 @@ function earnGoTicker(sym){                                              // jump
   if(typeof loadLiveNews==='function') loadLiveNews();
 }
 function _epsFmt(v){ return (v==null)?'—':(Math.round(v*100)/100).toString(); }
+// Earnings release time in Bangkok time. Yahoo sets midnight-UTC as a "time unknown" placeholder → blank.
+function _bkkTime(ts){
+  if(!ts || ts%86400===0) return '';
+  try{ return new Date(ts*1000).toLocaleTimeString('en-GB',{timeZone:'Asia/Bangkok',hour:'2-digit',minute:'2-digit',hour12:false}); }catch(e){ return ''; }
+}
 function _earnBadge(sym,info){
   const est=info.estimate?'~':'';
   const a=_epsFmt(info.epsActual), e=_epsFmt(info.epsEst);
   const parens=(info.epsActual!=null||info.epsEst!=null)?` (${a} / ${e})`:'';
-  const tip=(info.name||sym)+' — Earnings '+(info.estimate?'(est date) ':'')+info.date+' · EPS actual '+a+' / est '+e;
-  return `<div class="econ-cal-badge" onclick="event.stopPropagation();earnGoTicker('${sym}')" title="${_escHtml(tip)}" style="background:rgba(224,92,42,0.14);border-left:2px solid var(--accent2)"><span style="color:var(--accent2);font-weight:700">${est}${sym}</span> <span style="color:var(--text)">Earnings</span><span style="color:var(--muted)">${parens}</span></div>`;
+  const bt=_bkkTime(info.ts); const btTxt=bt?` <span style="color:var(--accent2)">${bt}</span>`:'';
+  const tip=(info.name||sym)+' — Earnings '+(info.estimate?'(est date) ':'')+info.date+(bt?(' · '+bt+' BKK'):'')+' · EPS actual '+a+' / est '+e;
+  return `<div class="econ-cal-badge" onclick="event.stopPropagation();earnGoTicker('${sym}')" title="${_escHtml(tip)}" style="background:rgba(224,92,42,0.14);border-left:2px solid var(--accent2)"><span style="color:var(--accent2);font-weight:700">${est}${sym}</span> <span style="color:var(--text)">Earnings</span>${btTxt}<span style="color:var(--muted)">${parens}</span></div>`;
 }
 function renderEarnCal(){
   const box=document.getElementById('earn-cal-list'); if(!box) return;
@@ -4341,7 +4350,7 @@ function renderEarnCal(){
   }
   const dow=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(x=>`<div class="econ-cal-dow">${x}</div>`).join('');
   const n=Object.keys(earnData||{}).length;
-  const legend=`<span><span class="dot" style="background:var(--accent2)"></span>Earnings date</span><span>~ = estimated date · (actual / est) EPS</span><span style="color:var(--muted)">· ${n} screener ticker${n===1?'':'s'} tracked · click a ticker for its news</span>`;
+  const legend=`<span><span class="dot" style="background:var(--accent2)"></span>Earnings date · time in BKK</span><span>~ = estimated date · (actual / est) EPS</span><span style="color:var(--muted)">· ${n} screener ticker${n===1?'':'s'} tracked · click a ticker for its news</span>`;
   box.innerHTML=`
     <div class="econ-cal-head">
       <button class="econ-cal-nav" onclick="earnCalShift(-1)" title="Previous month">‹</button>
@@ -4362,7 +4371,8 @@ function renderEarnUpcoming(){
   box.innerHTML=rows.map(([sym,info])=>{
     const dd=(typeof fmtDMY==='function')?fmtDMY(info.date):info.date;
     const eps=(info.epsEst!=null||info.epsActual!=null)?`<span style="color:var(--muted);white-space:nowrap">EPS ${_epsFmt(info.epsActual)} / ${_epsFmt(info.epsEst)} <span style="font-size:10px">(act/est)</span></span>`:'';
-    return `<div class="earn-up-row"><span class="earn-tk" onclick="earnGoTicker('${sym}')">${sym}</span><span style="color:var(--text);min-width:130px">${dd}${info.estimate?' <span style="color:var(--muted)">(est)</span>':''}</span><span style="flex:1;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escHtml(info.name||'')}</span>${eps}</div>`;
+    const bt=_bkkTime(info.ts);
+    return `<div class="earn-up-row"><span class="earn-tk" onclick="earnGoTicker('${sym}')">${sym}</span><span style="color:var(--text);min-width:130px">${dd}${info.estimate?' <span style="color:var(--muted)">(est)</span>':''}</span><span style="color:var(--accent2);min-width:82px;white-space:nowrap">${bt?bt+' <span style="color:var(--muted);font-size:10px">BKK</span>':'<span style="color:var(--muted);font-size:10px">time TBD</span>'}</span><span style="flex:1;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escHtml(info.name||'')}</span>${eps}</div>`;
   }).join('');
 }
 
