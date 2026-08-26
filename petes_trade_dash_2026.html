@@ -4191,8 +4191,8 @@ function renderEconIndicator(cat, containerId){
 
 // Month-grid calendar. Each day box shows badges for that day's key releases;
 // click a badge to jump to that indicator's page.
-const ECON_CAL_COLORS = { FOMC:'#e57368', CPI:'#2dd4bf', NFP:'#e0a52a', PPI:'#8b9cf7' };
-const ECON_CAL_TITLES = { 'Fed Interest Rate Decision':{s:'FOMC',cat:'FOMC',sub:'econ-fomc'}, 'Non Farm Payrolls':{s:'NFP',cat:'NFP',sub:'econ-nfp'}, 'Inflation Rate YoY':{s:'CPI',cat:'CPI',sub:'econ-cpi'}, 'PPI YoY':{s:'PPI',cat:'PPI',sub:null} };
+const ECON_CAL_COLORS = { FOMC:'#e57368', CPI:'#2dd4bf', NFP:'#e0a52a', PPI:'#8b9cf7', PCE:'#c084fc' };
+const ECON_CAL_TITLES = { 'Fed Interest Rate Decision':{s:'FOMC',cat:'FOMC',sub:'econ-fomc'}, 'Non Farm Payrolls':{s:'NFP',cat:'NFP',sub:'econ-nfp'}, 'Inflation Rate YoY':{s:'CPI',cat:'CPI',sub:'econ-cpi'}, 'PPI YoY':{s:'PPI',cat:'PPI',sub:null}, 'Core PCE Price Index YoY':{s:'PCE',cat:'PCE',sub:null} };
 let econCalMonth = null; // {y, m(0-based)}
 function econCalShift(delta){ if(!econCalMonth) return; let {y,m}=econCalMonth; m+=delta; if(m<0){m=11;y--;} if(m>11){m=0;y++;} econCalMonth={y,m}; renderEconCal(); }
 function econCalToday(){ const t=(typeof drToday==='function')?drToday():new Date().toISOString().slice(0,10); const p=t.split('-'); econCalMonth={y:+p[0],m:+p[1]-1}; renderEconCal(); }
@@ -4237,7 +4237,7 @@ function renderEconCal(){
     </div>`;
   }
   const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(x=>`<div class="econ-cal-dow">${x}</div>`).join('');
-  const legend = Object.entries({FOMC:'FOMC rate',CPI:'CPI',NFP:'Non-Farm',PPI:'PPI'}).map(([k,lbl])=>`<span><span class="dot" style="background:${ECON_CAL_COLORS[k]}"></span>${lbl}</span>`).join('')
+  const legend = Object.entries({FOMC:'FOMC rate',CPI:'CPI',NFP:'Non-Farm',PPI:'PPI',PCE:'Core PCE'}).map(([k,lbl])=>`<span><span class="dot" style="background:${ECON_CAL_COLORS[k]}"></span>${lbl}</span>`).join('')
     + `<span><span class="dot" style="background:var(--accent2)"></span>Earnings (screener)</span>`;
   box.innerHTML = `
     <div class="econ-cal-head">

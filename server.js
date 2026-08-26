@@ -623,6 +623,7 @@ function _econCategory(t) {
   if (/^Non.?Farm Payrolls$/i.test(t)) return 'NFP';
   if (/Inflation Rate|Core Inflation|^CPI\b/i.test(t)) return 'CPI';
   if (/^PPI|Producer Price/i.test(t)) return 'PPI';
+  if (/PCE Price Index/i.test(t)) return 'PCE';   // Core/headline PCE — the Fed's preferred inflation gauge
   return null;
 }
 // The feed caps at ~2000 events per request (US has many daily), so a wide range gets
