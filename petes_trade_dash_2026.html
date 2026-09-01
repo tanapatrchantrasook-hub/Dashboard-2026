@@ -5146,7 +5146,7 @@ const SCREENER_COLS = [
   { key:'rvol',      label:'RVOL' },
   { key:'volchart',  label:'Volume Chart' },
 ];
-const TF_LABEL = { '1d':'Daily', '4h':'4h', '2h':'2h', '60m':'1h', '30m':'30m', '15m':'15m', '5m':'5m', '1m':'1m' };
+const TF_LABEL = { '1w':'Weekly', '1d':'Daily', '4h':'4h', '2h':'2h', '60m':'1h', '30m':'30m', '15m':'15m', '5m':'5m', '1m':'1m' };
 function _fmtBig(n){
   n = Number(n)||0;
   if(n>=1e12) return (n/1e12).toFixed(2)+'T';

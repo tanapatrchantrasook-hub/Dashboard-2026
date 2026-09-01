@@ -297,7 +297,8 @@ const TF_MAP = {
   '60m': { interval: '60m', range: '3mo' },
   '2h':  { interval: '60m', range: '6mo', group: 2 },   // Yahoo has no native 2h — resample 60m
   '4h':  { interval: '60m', range: '1y',  group: 4 },   // ...and 4h from 60m
-  '1d':  { interval: '1d',  range: '3mo' }
+  '1d':  { interval: '1d',  range: '3mo' },
+  '1w':  { interval: '1wk', range: '2y' }               // native weekly bars
 };
 // Resample close/volume arrays into buckets of `g` consecutive bars (close=last, volume=sum)
 function _resampleCV(closes, vols, g) {
@@ -561,32 +562,33 @@ app.get('/api/earnings', async (req, res) => {
   await Promise.all(syms.map(async sym => {
     try {
       const q = await fetchV7Quote(sym);
-      if (!q) return;
-      const ts = q.earningsTimestamp || q.earningsTimestampStart || null;
+      const det = await fetchEarningsDetail(sym);
+      const ce = det && det.calendarEvents && det.calendarEvents.earnings;
+      const ec = det && det.earnings && det.earnings.earningsChart;
+      // DATE: prefer calendarEvents.earnings.earningsDate — the accurate NEXT report date.
+      // v7 earningsTimestamp is often stale (returns the LAST report), so use it only as fallback.
+      let ts = null, estimate = false;
+      const ed = ce && Array.isArray(ce.earningsDate) ? ce.earningsDate : null;
+      if (ed && ed.length && _qsNum(ed[0]) != null) { ts = _qsNum(ed[0]); estimate = !!ce.isEarningsDateEstimate; }
+      else if (q && (q.earningsTimestamp || q.earningsTimestampStart)) { ts = q.earningsTimestamp || q.earningsTimestampStart; estimate = !!q.isEarningsDateEstimate; }
       if (!ts) return;
       const d = new Date(ts * 1000);
-      let epsEst = (typeof q.epsForward === 'number') ? q.epsForward : null;
+      let epsEst = _qsNum(ce && ce.earningsAverage);
+      if (epsEst == null) epsEst = _qsNum(ec && ec.currentQuarterEstimate);
+      if (epsEst == null && q && typeof q.epsForward === 'number') epsEst = q.epsForward;
       let epsActual = null;
-      try {
-        const det = await fetchEarningsDetail(sym);
-        const ce = det && det.calendarEvents && det.calendarEvents.earnings;
-        const ec = det && det.earnings && det.earnings.earningsChart;
-        const upEst = _qsNum(ce && ce.earningsAverage);
-        const curEst = _qsNum(ec && ec.currentQuarterEstimate);
-        if (upEst != null) epsEst = upEst; else if (curEst != null) epsEst = curEst;
-        if (d.getTime() < todayMid.getTime() && ec && Array.isArray(ec.quarterly) && ec.quarterly.length) {
-          const last = ec.quarterly[ec.quarterly.length - 1];
-          const la = _qsNum(last && last.actual), le = _qsNum(last && last.estimate);
-          if (la != null) { epsActual = la; if (le != null) epsEst = le; }
-        }
-      } catch (e) {}
+      if (d.getTime() < todayMid.getTime() && ec && Array.isArray(ec.quarterly) && ec.quarterly.length) {
+        const last = ec.quarterly[ec.quarterly.length - 1];
+        const la = _qsNum(last && last.actual), le = _qsNum(last && last.estimate);
+        if (la != null) { epsActual = la; if (le != null) epsEst = le; }
+      }
       out[sym] = {
         date: d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()),
         ts,
-        estimate: !!q.isEarningsDateEstimate,
+        estimate,
         epsEst,
         epsActual,
-        name: q.shortName || q.longName || sym
+        name: (q && (q.shortName || q.longName)) || sym
       };
     } catch (e) {}
   }));
@@ -726,7 +728,8 @@ const SCAN_TF = {
   '60m': { interval: '60m', range: '3mo', group: 1, momFull: 3,   rsN: 30 },
   '2h':  { interval: '60m', range: '6mo', group: 2, momFull: 3.5, rsN: 30 },
   '4h':  { interval: '60m', range: '1y',  group: 4, momFull: 4,   rsN: 30 },
-  '1d':  { interval: '1d',  range: '1y',  group: 1, momFull: 5,   rsN: 63 }
+  '1d':  { interval: '1d',  range: '1y',  group: 1, momFull: 5,   rsN: 63 },
+  '1w':  { interval: '1wk', range: '5y',  group: 1, momFull: 8,   rsN: 26 }   // weekly: ~5y of bars for MAs/52w, RS over ~6 months
 };
 function _resampleBars(H, L, C, V, g) {
   if (g <= 1) return { H, L, C, V };
