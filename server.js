@@ -298,6 +298,7 @@ const TF_MAP = {
   '2h':  { interval: '60m', range: '6mo', group: 2 },   // Yahoo has no native 2h — resample 60m
   '4h':  { interval: '60m', range: '1y',  group: 4 },   // ...and 4h from 60m
   '1d':  { interval: '1d',  range: '3mo' },
+  '3D':  { interval: '1d',  range: '1y',  group: 3 },   // 3-day bars (resampled from daily)
   '1w':  { interval: '1wk', range: '2y' }               // native weekly bars
 };
 // Resample close/volume arrays into buckets of `g` consecutive bars (close=last, volume=sum)
@@ -729,6 +730,7 @@ const SCAN_TF = {
   '2h':  { interval: '60m', range: '6mo', group: 2, momFull: 3.5, rsN: 30 },
   '4h':  { interval: '60m', range: '1y',  group: 4, momFull: 4,   rsN: 30 },
   '1d':  { interval: '1d',  range: '1y',  group: 1, momFull: 5,   rsN: 63 },
+  '3D':  { interval: '1d',  range: '3y',  group: 3, momFull: 6.5, rsN: 21 },   // 3-day bars from daily (~3mo RS)
   '1w':  { interval: '1wk', range: '5y',  group: 1, momFull: 8,   rsN: 26 }   // weekly: ~5y of bars for MAs/52w, RS over ~6 months
 };
 function _resampleBars(H, L, C, V, g) {
