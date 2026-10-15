@@ -7670,8 +7670,8 @@ async function loadSavedData() {
 
     // ── PORTFOLIO SWITCHER: the top-level data restored above is the ACTIVE portfolio;
     // load the inactive portfolio(s) from `inactivePortfolios` (fresh empty FT on first run). ──
-    activePortfolio = (d.activePortfolio === 'FT') ? 'FT' : 'TG';
-    _portfolioStash.TG = null; _portfolioStash.FT = null;
+    activePortfolio = _PORTFOLIO_NAMES.includes(d.activePortfolio) ? d.activePortfolio : 'TG';
+    for (const p of _PORTFOLIO_NAMES) _portfolioStash[p] = null;
     if (d.inactivePortfolios && typeof d.inactivePortfolios === 'object') {
       for (const p of _PORTFOLIO_NAMES) { if (p !== activePortfolio && d.inactivePortfolios[p]) _portfolioStash[p] = d.inactivePortfolios[p]; }
     }
