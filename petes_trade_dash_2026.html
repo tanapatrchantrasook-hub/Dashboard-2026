@@ -78,6 +78,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);font-size:13px
 .watch-strip:empty{display:none}
 .topbar-tag{font-size:11px;color:var(--muted);border:0.5px solid var(--border2);padding:4px 10px;border-radius:4px;cursor:pointer}
 .topbar-tag.active{color:var(--accent2);border-color:var(--accent);background:rgba(224,92,42,0.08)}
+/* Playbook direction filters: Short highlights red (bearish), Long green (bullish) */
+#pb-filter-bar .topbar-tag[onclick*="'short'"].active{color:var(--red);border-color:var(--red);background:rgba(229,115,104,0.12)}
+#pb-filter-bar .topbar-tag[onclick*="'long'"].active{color:var(--green);border-color:var(--green);background:rgba(76,175,133,0.12)}
 
 .page{display:none}
 .page.active{display:block}
@@ -2285,10 +2288,11 @@ function applyLockUI(section){
 function toggleLock(section){
   lockState[section]=!lockState[section];
   applyLockUI(section);
+  if(typeof scheduleSave==='function') scheduleSave();   // locking persists any edits made in this section
 }
 const PB_MAX=20; // max screenshots per setup
 function getPbImgs(){if(!pbStore[activePlayId])pbStore[activePlayId]=[];pbStore[activePlayId]=pbStore[activePlayId].filter(x=>x);return pbStore[activePlayId];}
-function saveDescription(){const p=getPlay(activePlayId);if(p){p.desc=document.getElementById('d-desc-input').value.trim();renderPlaybook();}}
+function saveDescription(){const p=getPlay(activePlayId);if(p){p.desc=document.getElementById('d-desc-input').value.trim();renderPlaybook();if(typeof scheduleSave==='function')scheduleSave();}}
 function makeStatEditable(el,id,field){
   // Clear placeholder dash so typing replaces it
   const cur=el.textContent.trim();
@@ -2497,7 +2501,7 @@ function renderTags(p){
 function toggleTagLock(id){ lockState.tags = (lockState.tags===false) ? true : false; renderTags(getPlay(id)); }
 function addTag(id){ const p=getPlay(id); const inp=document.getElementById('add-tag-input'); const v=inp.value.trim().toLowerCase(); if(!v)return; p.tags.push(v); renderTags(p); renderPlaybook(); }
 function removeTag(id,i){ const p=getPlay(id); p.tags.splice(i,1); renderTags(p); renderPlaybook(); }
-function cycleType(id){ const p=getPlay(id); const order=['long','short','both']; p.type=order[(order.indexOf(p.type)+1)%3]; renderTags(p); renderPlaybook(); }
+function cycleType(id){ const p=getPlay(id); const order=['long','short','both']; p.type=order[(order.indexOf(p.type)+1)%3]; renderTags(p); renderPlaybook(); if(typeof scheduleSave==='function')scheduleSave(); }
 
 function openPlay(id){
   activePlayId=id;const p=getPlay(id);
@@ -2543,9 +2547,9 @@ function renderNotes(p){
   }
 }
 function updateRule(id,i,val){const p=getPlay(id);if(p){p.rules[i]=val.trim();}}
-function removeRule(id,i){const p=getPlay(id);if(p){p.rules.splice(i,1);renderRules(p);}}
-function addRule(id){const p=getPlay(id);if(!p)return;const inp=document.getElementById('add-rule-input');const v=inp.value.trim();if(!v)return;p.rules.push(v);renderRules(p);}
-function updateNotes(id,val){const p=getPlay(id);if(p){p.notes=val.trim();}}
+function removeRule(id,i){const p=getPlay(id);if(p){p.rules.splice(i,1);renderRules(p);if(typeof scheduleSave==='function')scheduleSave();}}
+function addRule(id){const p=getPlay(id);if(!p)return;const inp=document.getElementById('add-rule-input');const v=inp.value.trim();if(!v)return;p.rules.push(v);renderRules(p);if(typeof scheduleSave==='function')scheduleSave();}
+function updateNotes(id,val){const p=getPlay(id);if(p){p.notes=val.trim();if(typeof scheduleSave==='function')scheduleSave();}}
 function editSetupName(){
   const p=getPlay(activePlayId); if(!p) return;
   const nameEl=document.getElementById('d-name');
@@ -2607,12 +2611,14 @@ function addCriteria(playId,row){
   p.criteria[row]=p.criteria[row].filter(x=>x); // clean empties
   p.criteria[row].push(val);
   renderCriteria(p);
+  if(typeof scheduleSave==='function')scheduleSave();
 }
 function removeCriteria(playId,row,idx){
   const p=getPlay(parseInt(playId));if(!p||!p.criteria)return;
   p.criteria[row]=p.criteria[row].filter(x=>x);
   p.criteria[row].splice(idx,1);
   renderCriteria(p);
+  if(typeof scheduleSave==='function')scheduleSave();
 }
 function toggleC(playId,row,idx){const key=`${playId}_${row}_${idx}`;criteriaState[key]=((criteriaState[key]||0)+1)%2;const p=getPlay(parseInt(playId));if(p){renderCriteria(p);updateMajorityCriteriaBanner(p);}}
 
