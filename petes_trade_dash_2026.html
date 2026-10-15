@@ -2731,8 +2731,6 @@ function playMatchesFilter(p){
 function renderPlaybook(){
   document.getElementById('playbook-content').innerHTML=categories.map((cat,ci)=>{
     const filtered=cat.plays.filter(playMatchesFilter);
-    // when filtering (not 'all'), hide categories with no matches
-    if(playbookFilter!=='all' && filtered.length===0) return '';
     return `
     <div class="category-block">
       <div class="category-header"><div class="category-number">${cat.number}</div><div class="category-title">${cat.title}</div><div class="category-count">${filtered.length} setup${filtered.length!==1?'s':''}</div><div class="category-line"></div></div>
@@ -2751,12 +2749,12 @@ function renderPlaybook(){
           </div>
         </div>`;}).join('')}
       </div>
-      ${playbookFilter==='all'?`<div style="display:flex;justify-content:center;gap:8px;margin-top:10px;margin-bottom:4px">
+      <div style="display:flex;justify-content:center;gap:8px;margin-top:10px;margin-bottom:4px">
       <button onclick="addSetup(${ci},'long')" title="Add a long setup" style="display:inline-flex;align-items:center;gap:5px;padding:6px 14px;border-radius:6px;background:transparent;border:1px solid var(--border2);color:var(--muted);font-size:12px;font-family:var(--fb);font-weight:600;cursor:pointer;transition:all .15s" onmouseover="this.style.borderColor='var(--green)';this.style.color='var(--green)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'"><span style="font-size:15px;line-height:1">+</span> Long</button>
       <button onclick="addSetup(${ci},'short')" title="Add a short setup" style="display:inline-flex;align-items:center;gap:5px;padding:6px 14px;border-radius:6px;background:transparent;border:1px solid var(--border2);color:var(--muted);font-size:12px;font-family:var(--fb);font-weight:600;cursor:pointer;transition:all .15s" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'"><span style="font-size:15px;line-height:1">+</span> Short</button>
-    </div>`:''}
-    </div>`;}).join('') + (playbookFilter==='all'?`
-    <div style="margin-top:10px"><button onclick="addCategory()" style="display:inline-flex;align-items:center;gap:7px;padding:9px 16px;background:transparent;border:0.5px dashed var(--border2);border-radius:6px;color:var(--muted);font-size:12px;cursor:pointer;font-family:var(--fb)" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'"><i class="ti ti-folder-plus" style="font-size:15px"></i> New category</button></div>`:'');
+    </div>
+    </div>`;}).join('') + `
+    <div style="margin-top:10px"><button onclick="addCategory()" style="display:inline-flex;align-items:center;gap:7px;padding:9px 16px;background:transparent;border:0.5px dashed var(--border2);border-radius:6px;color:var(--muted);font-size:12px;cursor:pointer;font-family:var(--fb)" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'"><i class="ti ti-folder-plus" style="font-size:15px"></i> New category</button></div>`;
 }
 
 let nextSetupId = 1000;
