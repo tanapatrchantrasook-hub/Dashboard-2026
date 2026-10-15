@@ -627,6 +627,11 @@ function _econCategory(t) {
   if (/Inflation Rate|Core Inflation|^CPI\b/i.test(t)) return 'CPI';
   if (/^PPI|Producer Price/i.test(t)) return 'PPI';
   if (/PCE Price Index/i.test(t)) return 'PCE';   // Core/headline PCE — the Fed's preferred inflation gauge
+  if (/GDP Growth Rate QoQ/i.test(t)) return 'GDP';      // real GDP (advance + final estimates)
+  if (/^Personal Income/i.test(t)) return 'INC';         // Personal Income MoM
+  if (/^Personal Spending/i.test(t)) return 'SPND';      // Personal Spending MoM
+  if (/^ISM (Manufacturing|Services) PMI$/i.test(t)) return 'ISM';   // ISM Manufacturing / Services PMI
+  if (/S&P Global .*PMI Flash$/i.test(t)) return 'PMI';  // S&P Global flash PMIs (mfg/svc/composite)
   return null;
 }
 // The feed caps at ~2000 events per request (US has many daily), so a wide range gets

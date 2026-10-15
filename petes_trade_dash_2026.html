@@ -4218,16 +4218,35 @@ function renderEconIndicator(cat, containerId){
 
 // Month-grid calendar. Each day box shows badges for that day's key releases;
 // click a badge to jump to that indicator's page.
-const ECON_CAL_COLORS = { FOMC:'#e57368', CPI:'#2dd4bf', NFP:'#e0a52a', PPI:'#8b9cf7', PCE:'#c084fc' };
-const ECON_CAL_TITLES = { 'Fed Interest Rate Decision':{s:'FOMC',cat:'FOMC',sub:'econ-fomc'}, 'Non Farm Payrolls':{s:'NFP',cat:'NFP',sub:'econ-nfp'}, 'Inflation Rate YoY':{s:'CPI',cat:'CPI',sub:'econ-cpi'}, 'PPI YoY':{s:'PPI',cat:'PPI',sub:null}, 'Core PCE Price Index YoY':{s:'PCE',cat:'PCE',sub:'econ-pce'} };
+const ECON_CAL_COLORS = { FOMC:'#e57368', CPI:'#2dd4bf', NFP:'#e0a52a', PPI:'#8b9cf7', PCE:'#c084fc', GDP:'#4ade80', INC:'#38bdf8', SPND:'#fb923c', ISM:'#ec4899', PMI:'#f59e0b', HIGH:'#ef4444' };
+const ECON_CAL_TITLES = { 'Fed Interest Rate Decision':{s:'FOMC',cat:'FOMC',sub:'econ-fomc'}, 'Non Farm Payrolls':{s:'NFP',cat:'NFP',sub:'econ-nfp'}, 'Inflation Rate YoY':{s:'CPI',cat:'CPI',sub:'econ-cpi'}, 'PPI YoY':{s:'PPI',cat:'PPI',sub:null}, 'Core PCE Price Index YoY':{s:'PCE',cat:'PCE',sub:'econ-pce'}, 'Core PCE Price Index MoM':{s:'PCE m/m',cat:'PCE',sub:'econ-pce'}, 'GDP Growth Rate QoQ Final':{s:'GDP',cat:'GDP',sub:null}, 'GDP Growth Rate QoQ Adv':{s:'GDP adv',cat:'GDP',sub:null}, 'Personal Income MoM':{s:'Income',cat:'INC',sub:null}, 'Personal Spending MoM':{s:'Spending',cat:'SPND',sub:null} };
+// Resolve a calendar event to its badge meta — by exact title first, else by the server's category (GDP/INC/SPND/ISM/PMI).
+function _econEvtShort(t){ t=t||'';
+  const map=[[/ISM Manufacturing PMI/i,'ISM Mfg'],[/ISM Services PMI/i,'ISM Svc'],[/S&P Global Manufacturing PMI/i,'PMI Mfg'],[/S&P Global Services PMI/i,'PMI Svc'],[/S&P Global Composite PMI/i,'PMI Comp']];
+  for(const [re,lbl] of map) if(re.test(t)) return lbl;
+  return t.replace(/\s*(MoM|YoY|QoQ|Prel|Final|Flash|Adv)\b/gi,'').replace(/\s+/g,' ').trim().slice(0,14);
+}
+function _econMeta(e){ const m=ECON_CAL_TITLES[e.title]; if(m) return m;
+  if(e.category==='GDP') return {s:'GDP',cat:'GDP',sub:null};
+  if(e.category==='INC') return {s:'Income',cat:'INC',sub:null};
+  if(e.category==='SPND') return {s:'Spending',cat:'SPND',sub:null};
+  if(e.category==='ISM') return {s:_econEvtShort(e.title),cat:'ISM',sub:null};
+  if(e.category==='PMI') return {s:_econEvtShort(e.title),cat:'PMI',sub:null};
+  return null; }
+// Calendar layer toggles (remembered per device): economic events + earnings names.
+let econCalShowEvents = true, econCalShowEarnings = true;
+try { const _s = JSON.parse(localStorage.getItem('petesEconCalShow')||'{}'); if(typeof _s.events==='boolean') econCalShowEvents=_s.events; if(typeof _s.earnings==='boolean') econCalShowEarnings=_s.earnings; } catch(e){}
+function _econCalSaveShow(){ try{ localStorage.setItem('petesEconCalShow', JSON.stringify({events:econCalShowEvents, earnings:econCalShowEarnings})); }catch(e){} }
+function econCalToggleEvents(){ econCalShowEvents=!econCalShowEvents; _econCalSaveShow(); renderEconCal(); }
+function econCalToggleEarnings(){ econCalShowEarnings=!econCalShowEarnings; _econCalSaveShow(); renderEconCal(); }
 let econCalMonth = null; // {y, m(0-based)}
 function econCalShift(delta){ if(!econCalMonth) return; let {y,m}=econCalMonth; m+=delta; if(m<0){m=11;y--;} if(m>11){m=0;y++;} econCalMonth={y,m}; renderEconCal(); }
 function econCalToday(){ const t=(typeof drToday==='function')?drToday():new Date().toISOString().slice(0,10); const p=t.split('-'); econCalMonth={y:+p[0],m:+p[1]-1}; renderEconCal(); }
 function econGoto(sub){ const tab=document.querySelector('#page-econ .subtab[onclick*="'+sub+'"]'); if(tab) switchSubtab(tab, sub); }
 function _econCalBadge(e){
-  const meta = ECON_CAL_TITLES[e.title]; if(!meta) return '';
+  const meta = _econMeta(e); if(!meta) return '';
   const c = ECON_CAL_COLORS[meta.cat] || 'var(--accent2)';
-  const fmt = (meta.cat==='NFP') ? (v=>v+'K') : (v=>v+'%');
+  const fmt = (meta.cat==='NFP') ? (v=>v+'K') : (meta.cat==='ISM'||meta.cat==='PMI') ? (v=>''+v) : (v=>v+'%');
   const val = e.actual!=null ? ' '+fmt(e.actual) : '';
   const tip = meta.s + (e.actual!=null?(' — actual '+fmt(e.actual)):' — upcoming') + (e.forecast!=null?(' / forecast '+fmt(e.forecast)):'');
   const click = meta.sub ? `onclick="econGoto('${meta.sub}')"` : '';
@@ -4240,9 +4259,9 @@ function renderEconCal(){
   const {y,m} = econCalMonth;
   const today = (typeof drToday==='function')?drToday():new Date().toISOString().slice(0,10);
   const evByDate = {};
-  (econData||[]).filter(e=>ECON_CAL_TITLES[e.title]).forEach(e=>{ (evByDate[e.date]=evByDate[e.date]||[]).push(e); });
+  if(econCalShowEvents) (econData||[]).filter(e=>_econMeta(e)).forEach(e=>{ (evByDate[e.date]=evByDate[e.date]||[]).push(e); });
   const earnByDate = {};   // screener-stock earnings, same source as the News → Earnings calendar
-  if(typeof earnData!=='undefined') Object.entries(earnData).forEach(([s,i])=>{ if(i&&i.date){ (earnByDate[i.date]=earnByDate[i.date]||[]).push([s,i]); } });
+  if(econCalShowEarnings && typeof earnData!=='undefined') Object.entries(earnData).forEach(([s,i])=>{ if(i&&i.date){ (earnByDate[i.date]=earnByDate[i.date]||[]).push([s,i]); } });
   const startDow = new Date(Date.UTC(y,m,1)).getUTCDay();
   const daysIn = new Date(Date.UTC(y,m+1,0)).getUTCDate();
   const MN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -4264,14 +4283,19 @@ function renderEconCal(){
     </div>`;
   }
   const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(x=>`<div class="econ-cal-dow">${x}</div>`).join('');
-  const legend = Object.entries({FOMC:'FOMC rate',CPI:'CPI',NFP:'Non-Farm',PPI:'PPI',PCE:'Core PCE'}).map(([k,lbl])=>`<span><span class="dot" style="background:${ECON_CAL_COLORS[k]}"></span>${lbl}</span>`).join('')
-    + `<span><span class="dot" style="background:var(--accent2)"></span>Earnings (screener)</span>`;
+  let legend = econCalShowEvents ? Object.entries({FOMC:'FOMC rate',CPI:'CPI',NFP:'Non-Farm',PPI:'PPI',PCE:'Core PCE',GDP:'GDP',INC:'Income',SPND:'Spending',ISM:'ISM PMI',PMI:'S&P PMI'}).map(([k,lbl])=>`<span><span class="dot" style="background:${ECON_CAL_COLORS[k]}"></span>${lbl}</span>`).join('') : '';
+  if(econCalShowEarnings) legend += `<span><span class="dot" style="background:var(--accent2)"></span>Earnings (screener)</span>`;
+  const _econTglBtn = (on,label,fn) => `<button onclick="${fn}()" title="Show/hide ${label.toLowerCase()} on the calendar" style="background:${on?'var(--accent)':'transparent'};color:${on?'#0a0a0c':'var(--muted)'};border:1px solid ${on?'var(--accent)':'var(--border2)'};border-radius:6px;padding:5px 11px;font-size:11px;font-family:var(--fb);font-weight:600;cursor:pointer;white-space:nowrap">${label}</button>`;
   box.innerHTML = `
     <div class="econ-cal-head">
       <button class="econ-cal-nav" onclick="econCalShift(-1)" title="Previous month">‹</button>
       <div class="econ-cal-title">${MN[m]} ${y}</div>
       <button class="econ-cal-nav" onclick="econCalShift(1)" title="Next month">›</button>
-      <button class="econ-cal-todaybtn" onclick="econCalToday()">Today</button>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+        ${_econTglBtn(econCalShowEvents,'Economic Events','econCalToggleEvents')}
+        ${_econTglBtn(econCalShowEarnings,'Earnings','econCalToggleEarnings')}
+        <button class="econ-cal-todaybtn" style="margin-left:4px" onclick="econCalToday()">Today</button>
+      </div>
     </div>
     <div class="econ-cal-grid">${dow}${cells}</div>
     <div class="econ-cal-legend">${legend}<span style="color:var(--muted)">· click an event to open its page</span></div>`;
@@ -7314,22 +7338,29 @@ function switchPortfolio(target){
 // box lives in the Daily Report Card.
 function renderWhiteboard(){
   const box = document.getElementById('whiteboard-content'); if(!box) return;
+  const esc = s => (typeof _escHtml==='function') ? _escHtml(s) : s;
   const today = (typeof drToday==='function') ? drToday() : new Date().toISOString().slice(0,10);
-  const dates = Object.keys(reportCards).filter(d =>
-    d < today && reportCards[d] && reportCards[d].texts && (reportCards[d].texts.sessionNotesTmr||'').trim()
-  ).sort();
+  // Most recent PRIOR report card (active portfolio) that has any written content worth surfacing.
+  const has = c => c && c.texts && ((c.texts.sessionNotesTmr||'').trim() || (c.texts.review||'').trim() || (c.texts.thesis||'').trim());
+  const dates = Object.keys(reportCards).filter(d => d < today && has(reportCards[d])).sort();
   const prev = dates.length ? dates[dates.length-1] : null;
   if(!prev){
-    box.innerHTML = '<div class="empty-log" style="padding:48px 24px">No session notes yet.<br><span style="font-size:12px;color:var(--muted)">Write them in <b>Daily Report Card &rarr; Session Notes for Tomorrow</b>, and they&rsquo;ll appear here the next trading day.</span></div>';
+    box.innerHTML = '<div class="empty-log" style="padding:48px 24px">No notes yet.<br><span style="font-size:12px;color:var(--muted)">Fill in the <b>Daily Report Card</b> (Session Notes for Tomorrow, Journal &amp; Review, Market Thesis) and your key points will appear here the next trading day.</span></div>';
     return;
   }
-  const notes = reportCards[prev].texts.sessionNotesTmr;
+  const t = reportCards[prev].texts || {};
   const dlabel = (typeof fmtDMY==='function') ? (fmtDMY(prev)||prev) : prev;
-  const esc = (typeof _escHtml==='function') ? _escHtml(notes) : notes;
+  const block = (label, val, accent) => (val && val.trim()) ? `
+    <div style="margin-bottom:16px">
+      <div style="font-size:11px;color:var(--accent2);letter-spacing:0.07em;text-transform:uppercase;margin-bottom:7px">${label}</div>
+      <div style="background:var(--surface);border:0.5px solid var(--border2);border-left:3px solid ${accent};border-radius:10px;padding:16px 18px;white-space:pre-wrap;line-height:1.7;font-size:13.5px;color:var(--text)">${esc(val)}</div>
+    </div>` : '';
   box.innerHTML = `
-    <div style="max-width:920px">
-      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">From your session review on <span style="color:var(--accent2);font-family:var(--fd)">${dlabel}</span>:</div>
-      <div style="background:var(--surface);border:0.5px solid var(--border2);border-left:3px solid var(--accent);border-radius:10px;padding:20px 22px;white-space:pre-wrap;line-height:1.75;font-size:14px;color:var(--text)">${esc}</div>
+    <div style="max-width:940px">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Key points carried over from your <span style="color:var(--accent2);font-family:var(--fd)">${dlabel}</span> session review:</div>
+      ${block('Session Notes for Today', t.sessionNotesTmr, 'var(--accent)')}
+      ${block('Key Findings — Journal &amp; Review', t.review, 'var(--accent2)')}
+      ${block('Market Thesis / Plan', t.thesis, '#8b9cf7')}
     </div>`;
 }
 
