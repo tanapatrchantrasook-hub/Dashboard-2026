@@ -197,9 +197,14 @@ function writeData(data) {
 app.get('/api/data', async (req, res) => {
   if (SUPA) {
     try {
-      const cloud = await supaLoad();
+      // Cap the cloud load: a slow/stalled Supabase must never hang startup, which would
+      // drop the dashboard into "NOT SAVING" browser-only mode. Fall back to the local copy.
+      const cloud = await Promise.race([
+        supaLoad(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('cloud load timed out')), 12000))
+      ]);
       if (cloud) { writeData(cloud); return res.json(cloud); } // cache cloud copy locally
-    } catch (e) { console.warn('Cloud load failed, using local copy:', e.message); }
+    } catch (e) { console.warn('Cloud load failed/slow, using local copy:', e.message); }
   }
   res.json(readData());
 });
