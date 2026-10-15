@@ -7857,8 +7857,8 @@ saveStudy = function() { _origSaveStudy(); scheduleSave(); };
 const _origSaveDescription = saveDescription;
 saveDescription = function() { _origSaveDescription(); scheduleSave(); };
 
-const _origAddSetup = addSetup;
-addSetup = function(ci) { _origAddSetup(ci); scheduleSave(); };
+// addSetup now takes a direction (long/short) and saves itself — no wrapper (an old
+// wrapper here dropped the type argument, forcing every new setup to be "long").
 
 const _origAddCategory = addCategory;
 addCategory = function() { _origAddCategory(); scheduleSave(); };
