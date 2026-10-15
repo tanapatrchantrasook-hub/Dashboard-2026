@@ -7,5 +7,5 @@
 Set WshShell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
-' Stop any running server, pull latest code (window stays visible so you can see the result), then start.
-WshShell.Run "cmd /c taskkill /f /im node.exe >nul 2>&1 & cd /d """ & scriptDir & """ & echo Updating from GitHub... & git pull & echo. & echo Starting dashboard... & npm start", 1, False
+' Stop any running server, pull latest code, then start — all hidden (no console window pops up).
+WshShell.Run "cmd /c taskkill /f /im node.exe >nul 2>&1 & cd /d """ & scriptDir & """ & git pull & npm start", 0, False

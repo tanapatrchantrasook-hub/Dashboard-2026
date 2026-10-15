@@ -5,4 +5,5 @@
 Set WshShell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
-WshShell.Run "cmd /c taskkill /f /im node.exe >nul 2>&1 & timeout /t 1 >nul & cd /d """ & scriptDir & """ && npm start", 1, False
+' Hidden (window style 0) so no console window pops up while the server runs.
+WshShell.Run "cmd /c taskkill /f /im node.exe >nul 2>&1 & timeout /t 1 >nul & cd /d """ & scriptDir & """ && npm start", 0, False
