@@ -7473,10 +7473,52 @@ async function persistData() {
   }
 }
 
+// ── SAVE / CONNECTION WATCHDOG ────────────────────────────────────────────────
+// Keeps the dashboard saving without manual reloads:
+//  • load: retry the fetch a few times so a brief server restart / cloud stall doesn't
+//    strand us in browser-only mode in the first place.
+//  • save failed but we still hold the FULL data (serverAvailable true): retry the save
+//    automatically — the "NOT SAVING" banner clears itself once the server is back.
+//  • browser-only mode (data may be image-stripped): when the server returns, RELOAD to
+//    restore the complete server copy. We never push the lossy offline copy over good data.
+async function _fetchDataWithRetry() {
+  let lastErr;
+  for (let i = 1; i <= 5; i++) {
+    try {
+      const res = await fetch('/api/data', { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return await res.json();
+    } catch (e) { lastErr = e; if (i < 5) await new Promise(r => setTimeout(r, i * 1500)); }
+  }
+  throw lastErr;
+}
+let _watchdogReloading = false;
+setInterval(async () => {
+  if (!dataReady || _watchdogReloading) return;
+  const banner = document.getElementById('save-status-banner');
+  const bannerShowing = banner && banner.offsetParent !== null;
+  if (serverAvailable) {
+    try { sessionStorage.removeItem('_wdReloads'); } catch (e) {}       // connected again → reset the reload cap
+    if (bannerShowing) { try { await persistData(); } catch (e) {} }    // retry a transient failed save (full data in memory)
+  } else {
+    // Cap auto-reloads so we can't loop if loading keeps failing for a non-transient reason.
+    let n = 0; try { n = +(sessionStorage.getItem('_wdReloads') || 0); } catch (e) {}
+    if (n >= 2) return;   // gave up auto-reloading; leave the banner for a manual reload
+    try {
+      const r = await fetch('/?_ping=' + Date.now(), { method: 'HEAD', cache: 'no-store' });
+      if (r && r.ok) {
+        _watchdogReloading = true;
+        try { sessionStorage.setItem('_wdReloads', String(n + 1)); } catch (e) {}
+        console.log('✅ Server reachable again — reloading to restore full data.');
+        setTimeout(() => location.reload(), 1000);
+      }
+    } catch (e) { /* server still unreachable; try again next tick */ }
+  }
+}, 7000);
+
 async function loadSavedData() {
   try {
-    const res = await fetch('/api/data');
-    const d = await res.json();
+    const d = await _fetchDataWithRetry();
     // Data has loaded successfully from the server — saving is now safe.
     // (Set here, before rendering, so a hiccup in any later render step can't leave auto-save disabled.)
     dataReady = true;
