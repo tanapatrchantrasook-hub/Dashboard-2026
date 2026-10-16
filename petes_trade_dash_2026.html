@@ -7296,17 +7296,21 @@ let activePortfolio = 'TG';
 const _PORTFOLIO_NAMES = ['TG','FT','BT','IBKR'];
 const _portfolioStash = { TG:null, FT:null, BT:null, IBKR:null };   // holds the INACTIVE portfolios' data
 function _defaultSettings(){ return { dailyTarget:'', dailyLoss:'', startingBalance:'' }; }
-function _emptyPortfolio(){ return { trades:[], todTrades:[], reportCards:{}, goals:[], nextGoalId:1, tradingSettings:_defaultSettings() }; }
+function _rrCopy(a){ return (Array.isArray(a)?a:[]).map(r => ({ ...r })); }
+function _emptyPortfolio(){ return { trades:[], todTrades:[], reportCards:{}, goals:[], nextGoalId:1, tradingSettings:_defaultSettings(), rcRoutineRows:_rrCopy(RC_ROUTINE_ROWS), rcMgmtRows:_rrCopy(RC_MGMT_ROWS) }; }
 function _setArr(arr, vals){ arr.length = 0; if(Array.isArray(vals)) for(const v of vals) arr.push(v); }
 function _setObj(obj, vals){ for(const k in obj) delete obj[k]; if(vals && typeof vals==='object') Object.assign(obj, vals); }
 function _snapshotActivePortfolio(){
   return { trades:trades.slice(), todTrades:todTrades.slice(), reportCards:Object.assign({},reportCards),
-           goals:goals.slice(), nextGoalId:nextGoalId, tradingSettings:Object.assign({},tradingSettings) };
+           goals:goals.slice(), nextGoalId:nextGoalId, tradingSettings:Object.assign({},tradingSettings),
+           rcRoutineRows:_rrCopy(RC_ROUTINE_ROWS), rcMgmtRows:_rrCopy(RC_MGMT_ROWS) };   // per-portfolio report-card checklist template
 }
 function _hydratePortfolio(p){
   p = p || _emptyPortfolio();
   _setArr(trades, p.trades); _setArr(todTrades, p.todTrades); _setObj(reportCards, p.reportCards);
   _setArr(goals, p.goals); nextGoalId = p.nextGoalId || 1; _setObj(tradingSettings, p.tradingSettings || _defaultSettings());
+  if(Array.isArray(p.rcRoutineRows) && p.rcRoutineRows.length) RC_ROUTINE_ROWS = _rrCopy(p.rcRoutineRows);  // this portfolio's own checklist template
+  if(Array.isArray(p.rcMgmtRows) && p.rcMgmtRows.length) RC_MGMT_ROWS = _rrCopy(p.rcMgmtRows);
 }
 function updatePortfolioButtons(){
   _PORTFOLIO_NAMES.forEach(p=>{ const b=document.getElementById('pf-btn-'+p); if(b) b.classList.toggle('active', p===activePortfolio); });
