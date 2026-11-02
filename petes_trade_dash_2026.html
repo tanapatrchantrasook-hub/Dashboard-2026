@@ -983,6 +983,11 @@ input[type=file]{display:none}
       #page-econ .econ-cal-note:hover{background:rgba(255,255,255,0.14)}
       #page-econ .econ-cal-legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;font-size:11px;color:var(--muted)}
       #page-econ .econ-cal-legend span.dot{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:-1px;margin-right:5px}
+      #page-econ .econ-cal-pnl{font-size:11px;font-weight:800;font-family:var(--fd);padding:2px 5px;border-radius:4px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border:0.5px solid transparent}
+      #page-econ .econ-cal-pnl:hover{filter:brightness(1.12);text-decoration:underline}
+      #page-econ .econ-cal-pnl.win{color:var(--green);background:rgba(38,166,91,0.12);border-color:rgba(38,166,91,0.35)}
+      #page-econ .econ-cal-pnl.loss{color:#fff;background:var(--red)}
+      #page-econ .econ-cal-cell.econ-cal-loss{background:rgba(229,57,53,0.13);border-color:rgba(229,57,53,0.55)}
     </style>
     <div class="tl-page">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
@@ -4250,6 +4255,12 @@ try { const _s = JSON.parse(localStorage.getItem('petesEconCalShow')||'{}'); if(
 function _econCalSaveShow(){ try{ localStorage.setItem('petesEconCalShow', JSON.stringify({events:econCalShowEvents, earnings:econCalShowEarnings})); }catch(e){} }
 function econCalToggleEvents(){ econCalShowEvents=!econCalShowEvents; _econCalSaveShow(); renderEconCal(); }
 function econCalToggleEarnings(){ econCalShowEarnings=!econCalShowEarnings; _econCalSaveShow(); renderEconCal(); }
+// Click a day's P/L badge → open that day's Daily Report Card.
+function econGotoDayRC(ds){
+  try { switchPage('tradelog'); } catch(e){}
+  try { const tab=document.querySelector('#page-tradelog .subtab[onclick*="report-card"]'); if(tab) switchSubtab(tab,'report-card'); } catch(e){}
+  try { if(typeof rcLoadDate==='function') rcLoadDate(ds); } catch(e){}
+}
 let econCalMonth = null; // {y, m(0-based)}
 function econCalShift(delta){ if(!econCalMonth) return; let {y,m}=econCalMonth; m+=delta; if(m<0){m=11;y--;} if(m>11){m=0;y++;} econCalMonth={y,m}; renderEconCal(); }
 function econCalToday(){ const t=(typeof drToday==='function')?drToday():new Date().toISOString().slice(0,10); const p=t.split('-'); econCalMonth={y:+p[0],m:+p[1]-1}; renderEconCal(); }
@@ -4273,6 +4284,10 @@ function renderEconCal(){
   if(econCalShowEvents) (econData||[]).filter(e=>_econMeta(e)).forEach(e=>{ (evByDate[e.date]=evByDate[e.date]||[]).push(e); });
   const earnByDate = {};   // screener-stock earnings, same source as the News → Earnings calendar
   if(econCalShowEarnings && typeof earnData!=='undefined') Object.entries(earnData).forEach(([s,i])=>{ if(i&&i.date){ (earnByDate[i.date]=earnByDate[i.date]||[]).push([s,i]); } });
+  // Daily net P/L layer — summed from THIS portfolio's Trade Journal (trades[].pnl), grouped by trade date.
+  // Only days that have at least one trade with a $ value get a badge.
+  const pnlByDate = {};
+  (typeof trades!=='undefined' ? trades : []).forEach(t=>{ if(!t||!t.date) return; if(t.pnl===''||t.pnl==null) return; pnlByDate[t.date] = (pnlByDate[t.date]||0) + (parseFloat(t.pnl)||0); });
   const startDow = new Date(Date.UTC(y,m,1)).getUTCDay();
   const daysIn = new Date(Date.UTC(y,m+1,0)).getUTCDate();
   const MN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -4285,12 +4300,15 @@ function renderEconCal(){
     const earnBadges = (earnByDate[ds]||[]).sort((a,b)=>a[0].localeCompare(b[0])).map(([s,i])=>(typeof _earnBadge==='function'?_earnBadge(s,i):'')).join('');
     const notes = (typeof econNotes!=='undefined' && econNotes[ds]) ? econNotes[ds] : [];
     const noteBadges = notes.map((n,i)=>`<div class="econ-cal-note" onclick="event.stopPropagation();econEditNote('${ds}',${i})" title="${_escHtml(n)} — click to edit / delete"><i class="ti ti-note" style="font-size:10px;vertical-align:-1px"></i> ${_escHtml(n)}</div>`).join('');
-    cells += `<div class="econ-cal-cell${ds===today?' econ-cal-today':''}">
+    const net = (ds in pnlByDate) ? pnlByDate[ds] : null;
+    const isLoss = net!=null && net<0;
+    const pnlBadge = net!=null ? `<div class="econ-cal-pnl ${isLoss?'loss':'win'}" onclick="event.stopPropagation();econGotoDayRC('${ds}')" title="Net P/L this day from the Trade Journal (${activePortfolio}) — click to open this day's report card"><i class="ti ti-chart-line" style="font-size:10px;vertical-align:-1px"></i> ${net>=0?'+':'−'}$${Math.abs(net).toLocaleString()}</div>` : '';
+    cells += `<div class="econ-cal-cell${ds===today?' econ-cal-today':''}${isLoss?' econ-cal-loss':''}">
       <div style="display:flex;align-items:center;justify-content:space-between">
         <div class="econ-cal-daynum">${d}</div>
         <button class="econ-cal-add" onclick="event.stopPropagation();econAddNote('${ds}')" title="Add a note / event">+</button>
       </div>
-      <div class="econ-cal-events">${badges}${earnBadges}${noteBadges}</div>
+      <div class="econ-cal-events">${pnlBadge}${badges}${earnBadges}${noteBadges}</div>
     </div>`;
   }
   const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(x=>`<div class="econ-cal-dow">${x}</div>`).join('');
