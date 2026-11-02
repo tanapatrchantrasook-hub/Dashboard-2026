@@ -6859,6 +6859,20 @@ let RC_MGMT_ROWS = [
   { id:'greenDay',     label:'Green on day' },
 ];
 
+// FT/BT/IBKR default report-card checklist (Pete's own routine, from 2 Nov 2026 forward).
+// TG keeps the KTM routine above; these three default to this when their template is empty.
+const FT_DEFAULT_ROUTINE_ROWS = [
+  { id:'premarket',  time:'Pre Market',    label:'Well rested / enough sleep / Early arrival' },
+  { id:'ktm1',       time:'19:00–19:30',   label:'Solo - Market Prep' },
+  { id:'mktprep',    time:'20:00 - 21:20', label:'Trading Market Prep' },
+  { id:'ktm2',       time:'21:20 - 21:30', label:'Opening Session Final Brief / Engaging Flow State' },
+  { id:'session1',   time:'21:30 - 23:30', label:'Trading Session I' },
+  { id:'meditation', time:'23:30–00:30',   label:'Meditation / Reset' },
+  { id:'session2',   time:'00:30 - 3:30',  label:'Trading Session II' },
+  { id:'journal',    time:'02:30–04:00',   label:'Journal + Recap' },
+];
+const FT_DEFAULT_MGMT_ROWS = RC_MGMT_ROWS.map(r => ({ ...r }));
+
 const RC_TEXT_SECTIONS = [
   { id:'thesis',    label:'Market Thesis / Trading Plan / Things to focus on today', rows:8 },
   { id:'review',    label:'Trading Journal & Review: Focus / Lessons / Mistakes / Improvements', rows:4 },
@@ -7728,6 +7742,23 @@ async function loadSavedData() {
       for (const p of _PORTFOLIO_NAMES) { if (p !== activePortfolio && d.inactivePortfolios[p]) _portfolioStash[p] = d.inactivePortfolios[p]; }
     }
     for (const p of _PORTFOLIO_NAMES) { if (p !== activePortfolio && !_portfolioStash[p]) _portfolioStash[p] = _emptyPortfolio(); }
+    // ── DEFAULT ROUTINE (FT/BT/IBKR, from 2 Nov 2026): if any of these three has an empty
+    // checklist template, seed it with Pete's routine. Self-heals if an old instance clobbers
+    // it back to empty. TG is never touched (keeps its own KTM routine). ──
+    try {
+      const _seed = (p) => {
+        if (p === 'TG') return;
+        if (p === activePortfolio) {
+          if (!(Array.isArray(RC_ROUTINE_ROWS) && RC_ROUTINE_ROWS.length)) RC_ROUTINE_ROWS = FT_DEFAULT_ROUTINE_ROWS.map(r => ({ ...r }));
+          if (!(Array.isArray(RC_MGMT_ROWS)    && RC_MGMT_ROWS.length))    RC_MGMT_ROWS    = FT_DEFAULT_MGMT_ROWS.map(r => ({ ...r }));
+        } else {
+          const s = _portfolioStash[p]; if (!s) return;
+          if (!(Array.isArray(s.rcRoutineRows) && s.rcRoutineRows.length)) s.rcRoutineRows = FT_DEFAULT_ROUTINE_ROWS.map(r => ({ ...r }));
+          if (!(Array.isArray(s.rcMgmtRows)    && s.rcMgmtRows.length))    s.rcMgmtRows    = FT_DEFAULT_MGMT_ROWS.map(r => ({ ...r }));
+        }
+      };
+      ['FT','BT','IBKR'].forEach(_seed);
+    } catch(e) {}
     try { updatePortfolioButtons(); } catch(e) {}
     try { updateTopbarTitle(); } catch(e) {}
 
