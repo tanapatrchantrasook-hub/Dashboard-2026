@@ -493,7 +493,7 @@ input[type=file]{display:none}
         <button class="add-trade-btn" onclick="openModal()"><i class="ti ti-plus"></i> Log New Trade</button>
         <div class="empty-log" id="empty-log-msg">No trades logged yet — hit "Log New Trade" to start.</div>
         <table class="log-table" id="log-table" style="display:none">
-          <thead><tr><th data-key="date" data-label="Date" onclick="sortTradeJournal('date')" style="cursor:pointer;user-select:none" title="Sort by date">Date</th><th>Chart</th><th data-key="ticker" data-label="Ticker" onclick="sortTradeJournal('ticker')" style="cursor:pointer;user-select:none" title="Sort A–Z">Ticker</th><th data-key="setup" data-label="Setup" onclick="sortTradeJournal('setup')" style="cursor:pointer;user-select:none" title="Sort A–Z">Setup</th><th data-key="plannedRR" data-label="Planned RR" onclick="sortTradeJournal('plannedRR')" style="cursor:pointer;user-select:none" title="Sort by value">Planned RR</th><th data-key="actualRR" data-label="Actual RR" onclick="sortTradeJournal('actualRR')" style="cursor:pointer;user-select:none" title="Sort by value">Actual RR</th><th data-key="rrPot" data-label="RR Potential" onclick="sortTradeJournal('rrPot')" style="cursor:pointer;user-select:none" title="Sort by value">RR Potential</th><th data-key="wl" data-label="W/L" onclick="sortTradeJournal('wl')" style="cursor:pointer;user-select:none" title="Sort by result">W/L</th><th></th></tr></thead>
+          <thead><tr><th data-key="date" data-label="Date" onclick="sortTradeJournal('date')" style="cursor:pointer;user-select:none" title="Sort by date">Date</th><th>Chart</th><th data-key="ticker" data-label="Ticker" onclick="sortTradeJournal('ticker')" style="cursor:pointer;user-select:none" title="Sort A–Z">Ticker</th><th data-key="setup" data-label="Setup" onclick="sortTradeJournal('setup')" style="cursor:pointer;user-select:none" title="Sort A–Z">Setup</th><th data-key="plannedRR" data-label="Planned RR" onclick="sortTradeJournal('plannedRR')" style="cursor:pointer;user-select:none" title="Sort by value">Planned RR</th><th data-key="actualRR" data-label="Actual RR" onclick="sortTradeJournal('actualRR')" style="cursor:pointer;user-select:none" title="Sort by value">Actual RR</th><th data-key="rrPot" data-label="RR Potential" onclick="sortTradeJournal('rrPot')" style="cursor:pointer;user-select:none" title="Sort by value">RR Potential</th><th data-key="pnl" data-label="PnL $" onclick="sortTradeJournal('pnl')" style="cursor:pointer;user-select:none" title="Sort by P/L">PnL $</th><th data-key="wl" data-label="W/L" onclick="sortTradeJournal('wl')" style="cursor:pointer;user-select:none" title="Sort by result">W/L</th><th></th></tr></thead>
           <tbody id="log-tbody"></tbody>
         </table>
       </div>
@@ -1891,6 +1891,7 @@ function _tradeSortVal(t, key){
     case 'plannedRR': return parseFloat(t.plannedRR)||0;
     case 'actualRR':  return parseFloat(t.actualRR)||0;
     case 'rrPot':     return parseFloat(t.rrPot)||0;
+    case 'pnl':       return parseFloat(t.pnl)||0;
     case 'wl':        return ({W:3,BE:2,L:1}[t.wl]||0);
     default:          return '';
   }
@@ -1934,6 +1935,7 @@ function renderTradeTable(){
       <td>${t.plannedRR}</td>
       <td>${t.actualRR}</td>
       <td>${t.rrPot}</td>
+      <td style="font-family:var(--fd);font-weight:700;color:${(t.pnl||0)>=0?'var(--green)':'var(--red)'}">${(t.pnl===''||t.pnl==null)?'—':`${(t.pnl||0)>=0?'+':'−'}$${Math.abs(t.pnl||0).toLocaleString()}`}</td>
       <td class="${t.wl==='W'?'td-w':t.wl==='L'?'td-l':''}" style="${t.wl==='BE'?'color:var(--accent2);font-family:var(--fd);font-weight:700':''}">${t.wl}</td>
       <td style="text-align:center"><button onclick="event.stopPropagation();deleteTrade(${i})" title="Delete this trade" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:14px;cursor:pointer;padding:2px 6px;border-radius:4px;transition:all .12s" onmouseover="this.style.color='var(--red)';this.style.background='rgba(229,115,104,0.12)'" onmouseout="this.style.color='rgba(255,255,255,0.3)';this.style.background='transparent'"><i class="ti ti-trash"></i></button></td>
     </tr>`;}).join('');
