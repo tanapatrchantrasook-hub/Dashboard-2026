@@ -1013,6 +1013,75 @@ app.get('/api/ticker-news', async (req, res) => {
   res.json({ items: [], ticker, error: 'No news found for this ticker' });
 });
 
+// ── MARKET CYCLES ─────────────────────────────────────────────
+// One row per symbol for the Stock Screener → Market Cycles groups: price, daily % change,
+// market cap, today's volume, 20-day average volume, RVOL, sector, and % from all-time high.
+// Reuses fetchQuote (price/%chg/mktcap/volume); adds assetProfile (sector) + a max-range
+// monthly chart (all-time high). Cached briefly so group refreshes don't hammer Yahoo.
+const _mcCache = {}; // SYM -> { d, ts }
+async function _mcSector(symbol) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (!(await _yahooAuth(attempt === 1))) break;
+    try {
+      const url = 'https://query1.finance.yahoo.com/v10/finance/quoteSummary/' + encodeURIComponent(symbol) +
+        '?modules=assetProfile&crumb=' + encodeURIComponent(_yCrumb);
+      const r = await fetch(url, { headers: { 'User-Agent': YUA, 'Cookie': _yCookie } });
+      if (r.ok) {
+        const j = await r.json();
+        const d = (j.quoteSummary && j.quoteSummary.result && j.quoteSummary.result[0]) || null;
+        return (d && d.assetProfile && d.assetProfile.sector) || null;
+      }
+      _yCrumb = ''; _yCookie = '';
+    } catch (e) { _yCrumb = ''; _yCookie = ''; }
+  }
+  return null;
+}
+async function _mcAllTimeHigh(symbol) {
+  // Monthly bars over the full history — the max high is the all-time high.
+  try {
+    const url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(symbol) + '?interval=1mo&range=max';
+    const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const res = j.chart && j.chart.result && j.chart.result[0];
+    const highs = (res && res.indicators && res.indicators.quote && res.indicators.quote[0] && res.indicators.quote[0].high) || [];
+    let ath = null;
+    for (const h of highs) { if (typeof h === 'number' && (ath == null || h > ath)) ath = h; }
+    return ath;
+  } catch (e) { return null; }
+}
+async function fetchMarketCycle(symbol) {
+  const q = await fetchQuote(symbol, '1d');
+  if (!q || q.error) throw new Error((q && q.error) || 'no data');
+  // True 20-day average volume from the recent daily series (exclude today's in-progress bar).
+  let avg20 = null;
+  const vs = Array.isArray(q.volSeries) ? q.volSeries.filter(v => v != null && v > 0) : [];
+  const prior = vs.slice(0, -1).slice(-20); // up to 20 completed bars before the latest
+  if (prior.length) avg20 = Math.round(prior.reduce((a, b) => a + b, 0) / prior.length);
+  const [sector, ath] = await Promise.all([_mcSector(symbol), _mcAllTimeHigh(symbol)]);
+  const price = q.price || 0;
+  const athAdj = (ath != null && price > ath) ? price : ath;             // today can print a fresh high
+  const pctFromAth = (athAdj && price) ? ((price - athAdj) / athAdj) * 100 : null;
+  const rvol = avg20 ? (q.curVol || 0) / avg20 : null;
+  return { symbol, price, changePct: q.changePct, marketCap: q.marketCap,
+    curVol: q.curVol || 0, avgVol: avg20, rvol, sector, ath: athAdj, pctFromAth, phase: q.phase || 'regular' };
+}
+app.get('/api/market-cycle', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const syms = (req.query.symbols || '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean).slice(0, 80);
+  const out = {};
+  await Promise.all(syms.map(async sym => {
+    try {
+      const c = _mcCache[sym];
+      if (c && Date.now() - c.ts < 60 * 1000) { out[sym] = c.d; return; }
+      const d = await fetchMarketCycle(sym);
+      _mcCache[sym] = { d, ts: Date.now() };
+      out[sym] = d;
+    } catch (e) { out[sym] = { symbol: sym, error: e.message }; }
+  }));
+  res.json({ quotes: out, syncedAt: Date.now() });
+});
+
 // ── SERVE DASHBOARD ───────────────────────────────────────────
 app.get('/', (req, res) => {
   // Never cache the dashboard HTML so updates always show on reload

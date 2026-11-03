@@ -591,7 +591,7 @@ input[type=file]{display:none}
       <div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:0.5px solid var(--border2)">
         <div class="subtab active" id="sctab-main" onclick="switchScreenerTab('main')">Screener</div>
         <div class="subtab" id="sctab-scan" onclick="switchScreenerTab('scan')">Uptrend Scan</div>
-        <div class="subtab" id="sctab-matrix" onclick="switchScreenerTab('matrix')">Play Matrix</div>
+        <div class="subtab" id="sctab-cycles" onclick="switchScreenerTab('cycles')">Market Cycles</div>
       </div>
       <div id="sc-tab-main">
       <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:center;margin-bottom:18px">
@@ -630,7 +630,7 @@ input[type=file]{display:none}
       <div id="screener-status" style="font-size:11px;color:var(--muted);margin-top:12px;text-align:right;font-family:var(--fd)"></div>
       </div>
       <div id="sc-tab-scan" style="display:none"><div id="scan-section"></div></div>
-      <div id="sc-tab-matrix" style="display:none"><div id="matrix-section"></div></div>
+      <div id="sc-tab-cycles" style="display:none"><div id="market-cycles-section"></div></div>
     </div>
   </div>
 
@@ -5167,7 +5167,7 @@ const _SYM_BG = { green:'rgba(63,185,80,0.32)', orange:'rgba(224,92,42,0.32)', y
 // Re-render whichever screener sub-tab is active (highlight/filter changes are shared across all three)
 function _refreshScreenerView(){
   if(typeof screenerTab!=='undefined' && screenerTab==='scan'){ if(typeof _renderScanTable==='function') _renderScanTable(); }
-  else if(typeof screenerTab!=='undefined' && screenerTab==='matrix'){ if(typeof renderMatrixSection==='function') renderMatrixSection(); }
+  else if(typeof screenerTab!=='undefined' && screenerTab==='cycles'){ if(typeof renderMarketCycles==='function') renderMarketCycles(); }
   else { renderScreener(_lastQuotes); }
 }
 function cycleSymbolColor(sym){
@@ -5500,58 +5500,154 @@ async function loadScreener(force){
   _screenerLoading=false;
   // only refresh the sub-tab that's currently visible
   if(screenerTab==='scan' && typeof renderScanSection==='function') renderScanSection();
-  if(screenerTab==='matrix' && typeof renderMatrixSection==='function') renderMatrixSection();
+  if(screenerTab==='cycles' && typeof renderMarketCycles==='function') renderMarketCycles();
 }
-// Stock Screener sub-tabs: 'main' (table) · 'scan' (uptrend scan) · 'matrix' (play matrix)
+// Stock Screener sub-tabs: 'main' (table) · 'scan' (uptrend scan) · 'cycles' (market cycles)
 let screenerTab='main';
 function switchScreenerTab(key){
   screenerTab=key;
-  ['main','scan','matrix'].forEach(k=>{ const t=document.getElementById('sctab-'+k), p=document.getElementById('sc-tab-'+k);
+  ['main','scan','cycles'].forEach(k=>{ const t=document.getElementById('sctab-'+k), p=document.getElementById('sc-tab-'+k);
     if(t) t.classList.toggle('active', k===key); if(p) p.style.display=(k===key)?'':'none'; });
   if(key==='scan' && typeof renderScanSection==='function') renderScanSection();
-  if(key==='matrix' && typeof renderMatrixSection==='function') renderMatrixSection();
+  if(key==='cycles' && typeof loadMarketCycles==='function') loadMarketCycles();
   if(typeof scheduleSave==='function') scheduleSave();
 }
-let matrixSort='rv';   // sort names within each matrix cell, high→low: 'rv' (RVOL) | 'ch' (% Chg)
-function setMatrixSort(k){ matrixSort=k; if(typeof renderMatrixSection==='function') renderMatrixSection(); if(typeof scheduleSave==='function') scheduleSave(); }
-// ── Play-Quality Matrix: classify each symbol A–F by RVOL (≥1.5×) and % change ──
-function renderMatrixSection(){
-  const el=document.getElementById('matrix-section'); if(!el) return;
-  if(!screenerSymbols.length){ el.innerHTML=''; return; }
-  const groups={A:[],B:[],C:[],D:[],E:[],F:[]};
-  const cls=(rv,ch)=>{ const conf=rv>=1.5; const row=ch>=0.5?0:(ch>=0?1:2); return [['A','B'],['C','D'],['E','F']][row][conf?0:1]; };
-  screenerSymbols.forEach(sym=>{ const q=(_lastQuotes||{})[sym]; if(!q||q.error||q.changePct==null) return;
-    const rv=q.avgVol?((q.curVol||0)/q.avgVol):0; groups[cls(rv,q.changePct)].push({sym, rv, ch:q.changePct}); });
-  const C={
-    A:{d:'momentum confirmed · best long', bg:'rgba(76,175,133,0.13)', bd:'#4caf85', tc:'var(--green)'},
-    B:{d:'weak rally, no fuel · suspect / late', bg:'var(--surface2)', bd:'var(--border2)', tc:'var(--muted)'},
-    C:{d:'coiling / accumulation · pre-breakout watch', bg:'rgba(224,165,60,0.13)', bd:'#e0a53c', tc:'#d6921f'},
-    D:{d:'quiet drift · neutral / skip', bg:'var(--surface2)', bd:'var(--border2)', tc:'var(--muted)'},
-    E:{d:'distribution / selling · avoid long · short cand.', bg:'rgba(229,115,104,0.13)', bd:'#e57368', tc:'var(--red)'},
-    F:{d:'no-interest drift down · possible base', bg:'var(--surface2)', bd:'var(--border2)', tc:'var(--muted)'}
-  };
-  const cell=k=>{ const c=C[k], list=groups[k].slice().sort((a,b)=> matrixSort==='ch'?(b.ch-a.ch):(b.rv-a.rv));
-    const tags=list.map(x=>`<span style="display:inline-block;font-family:var(--fd);font-size:10.5px;font-weight:700;background:rgba(255,255,255,0.06);border-radius:3px;padding:1px 5px;margin:3px 3px 0 0">${x.sym} <span style="color:var(--muted);font-weight:400">${x.ch>=0?'+':''}${x.ch.toFixed(1)}%·${x.rv.toFixed(1)}x</span></span>`).join('');
-    return `<div style="background:${c.bg};border:1px solid ${c.bd};border-radius:11px;padding:12px 14px;min-height:118px">
-      <div style="display:flex;align-items:baseline;gap:8px"><span style="font-family:var(--fd);font-size:17px;font-weight:800;color:${c.tc}">${k}</span><span style="font-size:10px;color:var(--muted);font-family:var(--fd)">${list.length} <span data-no-i18n>${list.length===1?'name':'names'}</span></span></div>
-      <div style="font-size:11px;color:${c.tc};margin-top:3px;opacity:0.9">${c.d}</div>
-      <div style="margin-top:8px;line-height:1.5">${tags||'<span style="color:var(--muted);font-size:10px">—</span>'}</div></div>`; };
-  const colHead=(t,s)=>`<div style="text-align:center;padding-bottom:4px"><div style="font-family:var(--fd);font-size:12.5px;font-weight:700;color:var(--text)">${t}</div><div style="font-size:10px;color:var(--muted)">${s}</div></div>`;
-  const rowLab=(t,s)=>`<div style="display:flex;flex-direction:column;justify-content:center;padding-left:6px"><div style="font-family:var(--fd);font-size:12px;font-weight:700;color:var(--text)">${t}</div><div style="font-size:10px;color:var(--muted)">${s}</div></div>`;
-  const mtfBtns=Object.keys(TF_LABEL).map(k=>`<button onclick="setScreenerTF('${k}')" class="topbar-tag${screenerTF===k?' active':''}" style="cursor:pointer">${TF_LABEL[k]}</button>`).join('');
-  el.innerHTML=`<div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px">
-      <div><div style="font-family:var(--fd);font-size:13px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--text)">Play-Quality Matrix <span style="color:var(--accent2);font-size:11px">· ${TF_LABEL[screenerTF]||screenerTF}</span></div>
-      <div style="font-size:11px;color:var(--muted);margin:2px 0 0">Each symbol bucketed by volume confirmation (RVOL) × price move — A is the highest-quality long, E flags distribution.</div></div>
-      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
-        <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap"><span style="font-size:10px;color:var(--muted);font-family:var(--fd);letter-spacing:0.07em;margin-right:2px">PERIOD</span>${mtfBtns}</div>
-        <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap"><span style="font-size:10px;color:var(--muted);font-family:var(--fd);letter-spacing:0.07em;margin-right:2px">SORT BY</span><button onclick="setMatrixSort('rv')" class="topbar-tag${matrixSort==='rv'?' active':''}" style="cursor:pointer">RVOL</button><button onclick="setMatrixSort('ch')" class="topbar-tag${matrixSort==='ch'?' active':''}" style="cursor:pointer">% Chg</button></div>
-      </div></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 130px;gap:10px;align-items:stretch;margin-top:14px">
-      ${colHead('Rvol ≥ 1.5×','vol confirms')}${colHead('Rvol < 1.5×','no confirmation')}<div></div>
-      ${cell('A')}${cell('B')}${rowLab('P ≥ 0.5%','price up')}
-      ${cell('C')}${cell('D')}${rowLab('0 – 0.5%','price flat')}
-      ${cell('E')}${cell('F')}${rowLab('P < 0%','price down')}
-    </div>`;
+// ── MARKET CYCLES: user-made groups of tickers, each a sortable table of live cycle stats ──
+// Columns: Symbol · Price · % Chg D · Mkt Cap · Vol · Avg Vol 20d · RVOL · Sector · % from ATH.
+// Data from /api/market-cycle (Yahoo). Groups are shared across portfolios (like the screener).
+let marketCycleGroups = [];        // [{ id, name, symbols:[], sort:{key,dir} }]
+let _mcQuotes = {};                // SYM -> row object from the server (shared across groups)
+let _mcTs = 0, _mcLoading = false, _mcNextId = 1;
+const MC_DEFAULT_SORT = { key:'pctFromAth', dir:'desc' };
+function _mcAllSymbols(){ const s=new Set(); marketCycleGroups.forEach(g=>(g.symbols||[]).forEach(x=>s.add(x))); return [...s]; }
+function _mcSyncNextId(){ let mx=0; marketCycleGroups.forEach(g=>{ if(+g.id>mx) mx=+g.id; }); _mcNextId=mx+1; }
+async function loadMarketCycles(force){
+  const el=document.getElementById('market-cycles-section'); if(!el) return;
+  renderMarketCycles();
+  const syms=_mcAllSymbols(); if(!syms.length) return;
+  if(_mcLoading) return;
+  if(!force && _mcTs && Date.now()-_mcTs<50000) return;   // throttle; server also caches 60s
+  _mcLoading=true; renderMarketCycles();
+  try{
+    const r=await fetch('/api/market-cycle?symbols='+encodeURIComponent(syms.join(','))+'&_cb='+Date.now(),{cache:'no-store'});
+    const j=await r.json();
+    if(j && j.quotes) _mcQuotes=Object.assign({}, _mcQuotes, j.quotes);
+    _mcTs=Date.now();
+  }catch(e){}
+  _mcLoading=false;
+  renderMarketCycles();
+}
+function mcAddGroup(){
+  const name=(prompt('Name this group (e.g. "Mega-cap Tech", "Watching for lows"):','')||'').trim();
+  if(!name) return;
+  marketCycleGroups.push({ id:_mcNextId++, name, symbols:[], sort:{...MC_DEFAULT_SORT} });
+  if(typeof scheduleSave==='function') scheduleSave();
+  renderMarketCycles();
+}
+function mcRenameGroup(id){
+  const g=marketCycleGroups.find(x=>x.id===id); if(!g) return;
+  const n=(prompt('Rename group:', g.name)||'').trim(); if(!n) return;
+  g.name=n; if(typeof scheduleSave==='function') scheduleSave(); renderMarketCycles();
+}
+function mcDeleteGroup(id){
+  const g=marketCycleGroups.find(x=>x.id===id); if(!g) return;
+  if(!confirm('Delete group "'+g.name+'"? This removes the group and its ticker list.')) return;
+  marketCycleGroups=marketCycleGroups.filter(x=>x.id!==id);
+  if(typeof scheduleSave==='function') scheduleSave(); renderMarketCycles();
+}
+function mcAddSymbol(id){
+  const g=marketCycleGroups.find(x=>x.id===id); if(!g) return;
+  const raw=(prompt('Add ticker(s) — separate several with a comma or space:','')||'').toUpperCase();
+  const syms=raw.split(/[^A-Z0-9.\-]+/).map(s=>s.trim()).filter(Boolean);
+  if(!syms.length) return;
+  g.symbols=g.symbols||[];
+  syms.forEach(s=>{ if(!g.symbols.includes(s)) g.symbols.push(s); });
+  if(typeof scheduleSave==='function') scheduleSave();
+  loadMarketCycles(true);
+}
+function mcRemoveSymbol(id, sym){
+  const g=marketCycleGroups.find(x=>x.id===id); if(!g) return;
+  g.symbols=(g.symbols||[]).filter(s=>s!==sym);
+  if(typeof scheduleSave==='function') scheduleSave();
+  renderMarketCycles();
+}
+function mcSort(id, key){
+  const g=marketCycleGroups.find(x=>x.id===id); if(!g) return;
+  if(!g.sort) g.sort={...MC_DEFAULT_SORT};
+  if(g.sort.key===key){ g.sort.dir = g.sort.dir==='asc'?'desc':'asc'; }
+  else { g.sort.key=key; g.sort.dir = (key==='symbol'||key==='sector')?'asc':'desc'; }   // numeric defaults high→low
+  if(typeof scheduleSave==='function') scheduleSave();
+  renderMarketCycles();
+}
+function _mcRmBtn(id,sym){ return `<button onclick="mcRemoveSymbol(${id},'${sym}')" title="Remove ${sym}" style="background:transparent;border:none;color:rgba(255,255,255,0.3);font-size:13px;cursor:pointer">✕</button>`; }
+function _mcRenderGroup(g){
+  const sort=g.sort||MC_DEFAULT_SORT, dir=sort.dir==='asc'?1:-1;
+  const rows=(g.symbols||[]).map(sym=>({sym, q:_mcQuotes[sym]}));
+  rows.sort((a,b)=>{
+    const qa=a.q||{}, qb=b.q||{};
+    if(sort.key==='symbol') return dir*String(a.sym).localeCompare(String(b.sym));
+    if(sort.key==='sector') return dir*String(qa.sector||'').localeCompare(String(qb.sector||''));
+    const va=qa[sort.key], vb=qb[sort.key];
+    const na=(va==null||isNaN(va))?-Infinity:va, nb=(vb==null||isNaN(vb))?-Infinity:vb;
+    return dir*(na-nb);
+  });
+  const _th=(key,label,title)=>{ const a=sort.key===key; const ar=a?(sort.dir==='asc'?' ▲':' ▼'):'<span style="opacity:0.22;font-size:9px"> ↕</span>'; return `<th onclick="mcSort(${g.id},'${key}')" style="padding:5px 10px;cursor:pointer;user-select:none;white-space:nowrap${a?';color:var(--accent2)':''}"${title?` title="${title}"`:''}>${label}${ar}</th>`; };
+  const fpc=v=>v==null?'—':(v>=0?'+':'')+v.toFixed(2)+'%';
+  const body=rows.map(({sym,q})=>{
+    if(!q) return `<tr style="border-top:0.5px solid var(--border2)"><td style="padding:6px 10px"><span class="td-ticker">${sym}</span></td><td colspan="8" style="padding:6px 10px;color:var(--muted);font-size:11px">loading…</td><td style="padding:6px 4px">${_mcRmBtn(g.id,sym)}</td></tr>`;
+    if(q.error) return `<tr style="border-top:0.5px solid var(--border2)"><td style="padding:6px 10px"><span class="td-ticker">${sym}</span></td><td colspan="8" style="padding:6px 10px;color:var(--red);font-size:11px">no data</td><td style="padding:6px 4px">${_mcRmBtn(g.id,sym)}</td></tr>`;
+    const chgCol=(q.changePct||0)>=0?'var(--green)':'var(--red)';
+    const athCol=(q.pctFromAth!=null&&q.pctFromAth>-5)?'var(--green)':(q.pctFromAth!=null&&q.pctFromAth<-25)?'var(--red)':'var(--muted)';
+    const tag=q.phase==='pre'?'PRE':q.phase==='post'?'AH':'';
+    return `<tr style="border-top:0.5px solid var(--border2)">
+      <td style="padding:6px 10px"><span class="td-ticker">${sym}</span></td>
+      <td style="padding:6px 10px;font-family:var(--fd)">${q.price!=null?'$'+Number(q.price).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}):'—'}</td>
+      <td style="padding:6px 10px;font-family:var(--fd);color:${chgCol};white-space:nowrap">${fpc(q.changePct)}${tag?` <span style="font-size:9px;font-weight:700;color:var(--muted);background:rgba(255,255,255,0.08);border-radius:3px;padding:1px 4px">${tag}</span>`:''}</td>
+      <td style="padding:6px 10px;font-family:var(--fd);color:var(--muted)">${q.marketCap?'$'+_fmtBig(q.marketCap):'—'}</td>
+      <td style="padding:6px 10px;font-family:var(--fd)">${q.curVol?_fmtBig(q.curVol):'—'}</td>
+      <td style="padding:6px 10px;font-family:var(--fd);color:var(--muted)">${q.avgVol?_fmtBig(q.avgVol):'—'}</td>
+      <td style="padding:6px 10px;font-family:var(--fd);font-weight:700">${q.rvol?q.rvol.toFixed(2)+'×':'—'}</td>
+      <td style="padding:6px 10px;font-family:var(--fd);color:var(--accent2)">${q.sector||'—'}</td>
+      <td style="padding:6px 10px;font-family:var(--fd);color:${athCol};white-space:nowrap">${q.pctFromAth==null?'—':q.pctFromAth.toFixed(1)+'%'}</td>
+      <td style="padding:6px 4px">${_mcRmBtn(g.id,sym)}</td>
+    </tr>`;
+  }).join('');
+  const emptyRow=`<tr><td colspan="10" style="padding:14px 10px;color:var(--muted);font-size:11px">No tickers yet — hit "+ Add Ticker".</td></tr>`;
+  return `<div style="margin-top:16px;border:0.5px solid var(--border2);border-radius:10px;padding:12px 14px;background:var(--surface)">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+      <div style="font-family:var(--fd);font-size:14px;font-weight:700;color:var(--text)">${_escHtml(g.name)} <span style="color:var(--muted);font-size:11px;font-weight:400">· ${(g.symbols||[]).length} ${(g.symbols||[]).length===1?'ticker':'tickers'}</span></div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap">
+        <button onclick="mcAddSymbol(${g.id})" class="topbar-tag" style="cursor:pointer" title="Add ticker(s) to this group">+ Add Ticker</button>
+        <button onclick="mcRenameGroup(${g.id})" class="topbar-tag" style="cursor:pointer" title="Rename this group">Rename</button>
+        <button onclick="mcDeleteGroup(${g.id})" class="topbar-tag" style="cursor:pointer;color:var(--red)" title="Delete this group">Delete</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto"><table class="log-table" style="width:100%;min-width:880px" data-no-i18n><thead><tr>
+      ${_th('symbol','Symbol')}
+      ${_th('price','Price')}
+      ${_th('changePct','% Chg D','Percent change today')}
+      ${_th('marketCap','Mkt Cap','Market capitalization')}
+      ${_th('curVol','Vol','Volume traded today')}
+      ${_th('avgVol','Avg Vol 20d','20-day average daily volume')}
+      ${_th('rvol','RVOL','Current volume ÷ 20-day average')}
+      ${_th('sector','Sector')}
+      ${_th('pctFromAth','% from ATH','Distance below the all-time high (0% = at ATH)')}
+      <th></th>
+    </tr></thead><tbody>${body||emptyRow}</tbody></table></div>
+  </div>`;
+}
+function renderMarketCycles(){
+  const el=document.getElementById('market-cycles-section'); if(!el) return;
+  const when=_mcTs?('updated '+new Date(_mcTs).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})):'';
+  const head=`<div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:6px">
+      <div><div style="font-family:var(--fd);font-size:13px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--text)">Market Cycles</div>
+      <div style="font-size:11px;color:var(--muted);margin:2px 0 0">Group tickers and track price, % change, market cap, volume, 20-day avg volume, RVOL, sector &amp; distance from all-time high. Click any column to sort. <span style="color:var(--accent2)">${_mcLoading?'loading…':when}</span></div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button onclick="loadMarketCycles(true)" class="topbar-tag" style="cursor:pointer" title="Refresh all groups">↻ Refresh</button>
+        <button onclick="mcAddGroup()" class="add-trade-btn" style="padding:7px 14px"><i class="ti ti-plus"></i> New Group</button>
+      </div></div>`;
+  if(!marketCycleGroups.length){ el.innerHTML=head+`<div class="empty-log" style="padding:34px 20px">No groups yet — hit "New Group" to create one, then add tickers.</div>`; return; }
+  el.innerHTML=head+marketCycleGroups.map(_mcRenderGroup).join('');
 }
 // ── In-Play Uptrend Scan (bottom section) — ranks symbols by a 0–100 score ──
 let _scanData=[], _scanLoading=false, _scanTs=0, scanTF='1d', scanBench='QQQ';
@@ -7442,7 +7538,7 @@ function collectData() {
     scanBench: (typeof scanBench!=='undefined' ? scanBench : 'QQQ'),
     screenerTab: (typeof screenerTab!=='undefined' ? screenerTab : 'main'),
     scanSort: (typeof _scanSort!=='undefined' ? _scanSort : null),
-    matrixSort: (typeof matrixSort!=='undefined' ? matrixSort : 'rv'),
+    marketCycleGroups: (typeof marketCycleGroups!=='undefined' ? marketCycleGroups : []),
     screenerHidden: screenerHidden,
     screenerSort: screenerSort,
     screenerDate: screenerDate,
@@ -7680,9 +7776,9 @@ async function loadSavedData() {
     if (d.screenerTF) screenerTF = d.screenerTF;
     if (d.scanTF) scanTF = d.scanTF;
     if (d.scanBench && ['QQQ','SPY','SMH'].includes(d.scanBench)) scanBench = d.scanBench;
-    if (d.screenerTab && ['main','scan','matrix'].includes(d.screenerTab)) screenerTab = d.screenerTab;
+    if (d.screenerTab && ['main','scan','cycles'].includes(d.screenerTab)) screenerTab = d.screenerTab;
+    if (Array.isArray(d.marketCycleGroups)) { marketCycleGroups = d.marketCycleGroups.filter(g=>g&&typeof g==='object').map(g=>({ id:g.id, name:String(g.name||'Group'), symbols:Array.isArray(g.symbols)?g.symbols.filter(s=>typeof s==='string'):[], sort:(g.sort&&typeof g.sort==='object')?g.sort:{...MC_DEFAULT_SORT} })); _mcSyncNextId(); }
     if (d.scanSort && d.scanSort.key) _scanSort = d.scanSort;
-    if (d.matrixSort && ['rv','ch'].includes(d.matrixSort)) matrixSort = d.matrixSort;
     if (d.screenerHidden && typeof d.screenerHidden === 'object') Object.assign(screenerHidden, d.screenerHidden);
     if (d.screenerSort && typeof d.screenerSort === 'object') Object.assign(screenerSort, d.screenerSort);
     if (typeof d.screenerDate === 'string') screenerDate = d.screenerDate;
