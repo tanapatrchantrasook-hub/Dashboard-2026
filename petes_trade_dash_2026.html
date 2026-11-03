@@ -5517,7 +5517,7 @@ function switchScreenerTab(key){
 // Data from /api/market-cycle (Yahoo). Groups are shared across portfolios (like the screener).
 let marketCycleGroups = [];        // [{ id, name, symbols:[], sort:{key,dir} }]
 let _mcQuotes = {};                // SYM -> row object from the server (shared across groups)
-let _mcTs = 0, _mcLoading = false, _mcNextId = 1;
+let _mcTs = 0, _mcLoading = false, _mcNextId = 1, _mcError = '';
 const MC_DEFAULT_SORT = { key:'pctFromAth', dir:'desc' };
 function _mcAllSymbols(){ const s=new Set(); marketCycleGroups.forEach(g=>(g.symbols||[]).forEach(x=>s.add(x))); return [...s]; }
 function _mcSyncNextId(){ let mx=0; marketCycleGroups.forEach(g=>{ if(+g.id>mx) mx=+g.id; }); _mcNextId=mx+1; }
@@ -5527,13 +5527,20 @@ async function loadMarketCycles(force){
   const syms=_mcAllSymbols(); if(!syms.length) return;
   if(_mcLoading) return;
   if(!force && _mcTs && Date.now()-_mcTs<50000) return;   // throttle; server also caches 60s
-  _mcLoading=true; renderMarketCycles();
+  _mcLoading=true; _mcError=''; renderMarketCycles();
+  // Fetch in small chunks so rows fill in progressively (and we don't fire 50+ Yahoo calls at once).
+  const CHUNK=5;
   try{
-    const r=await fetch('/api/market-cycle?symbols='+encodeURIComponent(syms.join(','))+'&_cb='+Date.now(),{cache:'no-store'});
-    const j=await r.json();
-    if(j && j.quotes) _mcQuotes=Object.assign({}, _mcQuotes, j.quotes);
-    _mcTs=Date.now();
-  }catch(e){}
+    for(let i=0;i<syms.length;i+=CHUNK){
+      const part=syms.slice(i,i+CHUNK);
+      const r=await fetch('/api/market-cycle?symbols='+encodeURIComponent(part.join(','))+'&_cb='+Date.now(),{cache:'no-store'});
+      if(!r.ok){ _mcError = r.status===404 ? 'restart' : 'fetch'; break; }
+      let j; try{ j=await r.json(); }catch(_){ _mcError='restart'; break; }   // 404 returns HTML, not JSON
+      if(j && j.quotes) _mcQuotes=Object.assign({}, _mcQuotes, j.quotes);
+      _mcTs=Date.now();
+      renderMarketCycles();   // show this chunk's rows now
+    }
+  }catch(e){ _mcError='fetch'; }
   _mcLoading=false;
   renderMarketCycles();
 }
@@ -5646,8 +5653,11 @@ function renderMarketCycles(){
         <button onclick="loadMarketCycles(true)" class="topbar-tag" style="cursor:pointer" title="Refresh all groups">↻ Refresh</button>
         <button onclick="mcAddGroup()" class="add-trade-btn" style="padding:7px 14px"><i class="ti ti-plus"></i> New Group</button>
       </div></div>`;
-  if(!marketCycleGroups.length){ el.innerHTML=head+`<div class="empty-log" style="padding:34px 20px">No groups yet — hit "New Group" to create one, then add tickers.</div>`; return; }
-  el.innerHTML=head+marketCycleGroups.map(_mcRenderGroup).join('');
+  const banner = _mcError==='restart'
+    ? `<div style="margin:4px 0 12px;padding:9px 13px;border:0.5px solid var(--red);border-radius:8px;background:rgba(229,115,104,0.12);color:var(--red);font-size:12px;line-height:1.5"><strong>Market data service not loaded.</strong> This feature added a new server route — restart the dashboard (close &amp; reopen it, or run your launcher) so it takes effect, then hit ↻ Refresh.</div>`
+    : (_mcError==='fetch' ? `<div style="margin:4px 0 12px;padding:9px 13px;border:0.5px solid var(--red);border-radius:8px;background:rgba(229,115,104,0.12);color:var(--red);font-size:12px">Couldn't reach the market-data service. Check your connection and hit ↻ Refresh.</div>` : '');
+  if(!marketCycleGroups.length){ el.innerHTML=head+banner+`<div class="empty-log" style="padding:34px 20px">No groups yet — hit "New Group" to create one, then add tickers.</div>`; return; }
+  el.innerHTML=head+banner+marketCycleGroups.map(_mcRenderGroup).join('');
 }
 // ── In-Play Uptrend Scan (bottom section) — ranks symbols by a 0–100 score ──
 let _scanData=[], _scanLoading=false, _scanTs=0, scanTF='1d', scanBench='QQQ';

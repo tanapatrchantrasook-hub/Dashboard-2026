@@ -1018,7 +1018,8 @@ app.get('/api/ticker-news', async (req, res) => {
 // market cap, today's volume, 20-day average volume, RVOL, sector, and % from all-time high.
 // Reuses fetchQuote (price/%chg/mktcap/volume); adds assetProfile (sector) + a max-range
 // monthly chart (all-time high). Cached briefly so group refreshes don't hammer Yahoo.
-const _mcCache = {}; // SYM -> { d, ts }
+const _mcCache = {}; // SYM -> { d, ts }  (full row, 60s)
+const _mcSlowCache = {}; // SYM -> { sector, ath, ts }  (slow-changing, 12h)
 async function _mcSector(symbol) {
   for (let attempt = 0; attempt < 2; attempt++) {
     if (!(await _yahooAuth(attempt === 1))) break;
@@ -1058,7 +1059,15 @@ async function fetchMarketCycle(symbol) {
   const vs = Array.isArray(q.volSeries) ? q.volSeries.filter(v => v != null && v > 0) : [];
   const prior = vs.slice(0, -1).slice(-20); // up to 20 completed bars before the latest
   if (prior.length) avg20 = Math.round(prior.reduce((a, b) => a + b, 0) / prior.length);
-  const [sector, ath] = await Promise.all([_mcSector(symbol), _mcAllTimeHigh(symbol)]);
+  // Sector and all-time high change slowly — cache them for 12h so only price/volume
+  // are refetched on a refresh. This is what makes repeat loads fast.
+  let slow = _mcSlowCache[symbol];
+  if (!slow || Date.now() - slow.ts > 12 * 60 * 60 * 1000) {
+    const [sector, ath] = await Promise.all([_mcSector(symbol), _mcAllTimeHigh(symbol)]);
+    slow = { sector, ath, ts: Date.now() };
+    if (sector != null || ath != null) _mcSlowCache[symbol] = slow;   // don't cache a total miss
+  }
+  const sector = slow.sector, ath = slow.ath;
   const price = q.price || 0;
   const athAdj = (ath != null && price > ath) ? price : ath;             // today can print a fresh high
   const pctFromAth = (athAdj && price) ? ((price - athAdj) / athAdj) * 100 : null;
