@@ -4234,7 +4234,7 @@ function renderEconIndicator(cat, containerId){
 
 // Month-grid calendar. Each day box shows badges for that day's key releases;
 // click a badge to jump to that indicator's page.
-const ECON_CAL_COLORS = { FOMC:'#e57368', CPI:'#2dd4bf', NFP:'#e0a52a', PPI:'#8b9cf7', PCE:'#c084fc', GDP:'#4ade80', INC:'#38bdf8', SPND:'#fb923c', ISM:'#ec4899', PMI:'#f59e0b', HIGH:'#ef4444' };
+const ECON_CAL_COLORS = { FOMC:'#e57368', CPI:'#2dd4bf', NFP:'#e0a52a', PPI:'#8b9cf7', PCE:'#c084fc', GDP:'#4ade80', INC:'#38bdf8', SPND:'#fb923c', ISM:'#ec4899', PMI:'#f59e0b', JOLTS:'#a3e635', CLAIMS:'#22d3ee', HIGH:'#ef4444' };
 const ECON_CAL_TITLES = { 'Fed Interest Rate Decision':{s:'FOMC',cat:'FOMC',sub:'econ-fomc'}, 'Non Farm Payrolls':{s:'NFP',cat:'NFP',sub:'econ-nfp'}, 'Inflation Rate YoY':{s:'CPI',cat:'CPI',sub:'econ-cpi'}, 'PPI YoY':{s:'PPI',cat:'PPI',sub:null}, 'Core PCE Price Index YoY':{s:'PCE',cat:'PCE',sub:'econ-pce'}, 'Core PCE Price Index MoM':{s:'PCE m/m',cat:'PCE',sub:'econ-pce'}, 'GDP Growth Rate QoQ Final':{s:'GDP',cat:'GDP',sub:null}, 'GDP Growth Rate QoQ Adv':{s:'GDP adv',cat:'GDP',sub:null}, 'Personal Income MoM':{s:'Income',cat:'INC',sub:null}, 'Personal Spending MoM':{s:'Spending',cat:'SPND',sub:null} };
 // Resolve a calendar event to its badge meta — by exact title first, else by the server's category (GDP/INC/SPND/ISM/PMI).
 function _econEvtShort(t){ t=t||'';
@@ -4248,6 +4248,8 @@ function _econMeta(e){ const m=ECON_CAL_TITLES[e.title]; if(m) return m;
   if(e.category==='SPND') return {s:'Spending',cat:'SPND',sub:null};
   if(e.category==='ISM') return {s:_econEvtShort(e.title),cat:'ISM',sub:null};
   if(e.category==='PMI') return {s:_econEvtShort(e.title),cat:'PMI',sub:null};
+  if(e.category==='JOLTS') return {s:'JOLTS',cat:'JOLTS',sub:null};
+  if(e.category==='CLAIMS') return {s:'Claims',cat:'CLAIMS',sub:null};
   return null; }
 // Calendar layer toggles (remembered per device): economic events + earnings names.
 let econCalShowEvents = true, econCalShowEarnings = true;
@@ -4268,7 +4270,7 @@ function econGoto(sub){ const tab=document.querySelector('#page-econ .subtab[onc
 function _econCalBadge(e){
   const meta = _econMeta(e); if(!meta) return '';
   const c = ECON_CAL_COLORS[meta.cat] || 'var(--accent2)';
-  const fmt = (meta.cat==='NFP') ? (v=>v+'K') : (meta.cat==='ISM'||meta.cat==='PMI') ? (v=>''+v) : (v=>v+'%');
+  const fmt = (meta.cat==='NFP'||meta.cat==='CLAIMS') ? (v=>v+'K') : (meta.cat==='JOLTS') ? (v=>v+'M') : (meta.cat==='ISM'||meta.cat==='PMI') ? (v=>''+v) : (v=>v+'%');
   const val = e.actual!=null ? ' '+fmt(e.actual) : '';
   const tip = meta.s + (e.actual!=null?(' — actual '+fmt(e.actual)):' — upcoming') + (e.forecast!=null?(' / forecast '+fmt(e.forecast)):'');
   const click = meta.sub ? `onclick="econGoto('${meta.sub}')"` : '';
@@ -4312,7 +4314,7 @@ function renderEconCal(){
     </div>`;
   }
   const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(x=>`<div class="econ-cal-dow">${x}</div>`).join('');
-  let legend = econCalShowEvents ? Object.entries({FOMC:'FOMC rate',CPI:'CPI',NFP:'Non-Farm',PPI:'PPI',PCE:'Core PCE',GDP:'GDP',INC:'Income',SPND:'Spending',ISM:'ISM PMI',PMI:'S&P PMI'}).map(([k,lbl])=>`<span><span class="dot" style="background:${ECON_CAL_COLORS[k]}"></span>${lbl}</span>`).join('') : '';
+  let legend = econCalShowEvents ? Object.entries({FOMC:'FOMC rate',CPI:'CPI',NFP:'Non-Farm',PPI:'PPI',PCE:'Core PCE',GDP:'GDP',INC:'Income',SPND:'Spending',ISM:'ISM PMI',PMI:'S&P PMI',JOLTS:'JOLTS Openings',CLAIMS:'Jobless Claims'}).map(([k,lbl])=>`<span><span class="dot" style="background:${ECON_CAL_COLORS[k]}"></span>${lbl}</span>`).join('') : '';
   if(econCalShowEarnings) legend += `<span><span class="dot" style="background:var(--accent2)"></span>Earnings (screener)</span>`;
   const _econTglBtn = (on,label,fn) => `<button onclick="${fn}()" title="Show/hide ${label.toLowerCase()} on the calendar" style="background:${on?'var(--accent)':'transparent'};color:${on?'#0a0a0c':'var(--muted)'};border:1px solid ${on?'var(--accent)':'var(--border2)'};border-radius:6px;padding:5px 11px;font-size:11px;font-family:var(--fb);font-weight:600;cursor:pointer;white-space:nowrap">${label}</button>`;
   box.innerHTML = `
