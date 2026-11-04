@@ -76,6 +76,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);font-size:13px
 .topbar-right{display:flex;gap:10px;align-items:center}
 .watch-strip{padding:8px 28px;border-bottom:0.5px solid var(--border);background:var(--surface);display:flex;align-items:center}
 .watch-strip:empty{display:none}
+.notes-strip{padding:5px 28px;border-bottom:0.5px solid var(--border);background:var(--surface);display:flex;align-items:flex-start;gap:10px}
+.notes-strip-lbl{font-size:10px;color:var(--muted);letter-spacing:0.08em;font-family:var(--fd);flex-shrink:0;padding-top:5px;white-space:nowrap}
+.notes-strip-ta{flex:1;background:transparent;border:none;color:var(--text);font-family:var(--fb);font-size:12.5px;line-height:1.5;resize:none;outline:none;padding:3px 0;min-height:22px;overflow:hidden}
+.notes-strip-ta::placeholder{color:var(--muted);font-style:italic}
 .topbar-tag{font-size:11px;color:var(--muted);border:0.5px solid var(--border2);padding:4px 10px;border-radius:4px;cursor:pointer}
 .topbar-tag.active{color:var(--accent2);border-color:var(--accent);background:rgba(224,92,42,0.08)}
 /* Playbook direction filters: Short highlights red (bearish), Long green (bullish) */
@@ -366,6 +370,7 @@ input[type=file]{display:none}
     </div>
   </div>
   <div id="watch-strip" class="watch-strip"></div>
+  <div id="notes-strip" class="notes-strip"></div>
 
   <!-- TRADE LOG & JOURNAL -->
   <div class="page active" id="page-tradelog">
@@ -2693,7 +2698,7 @@ function dailyWatchTopbar(){
     // Long = green, Short = red, anything else (Watch Only / none) = white
     const c=w.bias==='Long'?'var(--green)':w.bias==='Short'?'var(--red)':'var(--text)';
     // Custom hover tooltip (see _watchTip) — instant, shows bias, key levels, and your notes.
-    return `<span class="topbar-tag" style="cursor:default;color:${c};flex-shrink:0;display:inline-flex;align-items:center;gap:6px" onmouseenter="_watchTip(event,${i})" onmousemove="_watchTipMove(event)" onmouseleave="_watchTipHide()">${w.ticker}<span onclick="event.stopPropagation();removeWatch('daily',${i})" title="Remove ${w.ticker}" style="cursor:pointer;color:var(--muted);font-size:12px;line-height:1" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'">×</span></span>`;
+    return `<span class="topbar-tag" style="cursor:default;color:${c};flex-shrink:0;display:inline-flex;align-items:center;gap:6px" onmouseenter="_watchTip(event,${i})" onmousemove="_watchTipMove(event)" onmouseleave="_watchTipHide()">${w.ticker}<span onclick="event.stopPropagation();_watchTipHide();removeWatch('daily',${i})" title="Remove ${w.ticker}" style="cursor:pointer;color:var(--muted);font-size:12px;line-height:1" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--muted)'">×</span></span>`;
   }).join('');
   const empty=list.length?'':`<span style="font-size:11px;color:var(--muted);font-style:italic">none yet</span>`;
   const addBtn=`<button onclick="openWatchModal('daily')" title="Add a daily watchlist symbol" style="flex-shrink:0;background:transparent;border:0.5px dashed var(--border2);color:var(--muted);border-radius:4px;padding:2px 9px;font-size:14px;line-height:1;cursor:pointer;font-family:var(--fb)" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent2)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'">+</button>`;
@@ -5098,6 +5103,17 @@ function removeHype(i) {
 
 // ── WATCHLISTS ────────────────────────────────────────────────
 const watchlists = { daily: [], weekly: [] };
+// Quick free-form notes shown in the strip under the watchlist (global, auto-saved).
+let topNotes = '';
+function _topNotesAutosize(ta){ if(!ta) return; ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,160)+'px'; }
+function _topNotesInput(ta){ topNotes = ta.value; _topNotesAutosize(ta); if(typeof scheduleSave==='function') scheduleSave(); }
+function renderNotesStrip(){
+  const el=document.getElementById('notes-strip'); if(!el) return;
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  el.innerHTML=`<span class="notes-strip-lbl"><i class="ti ti-note"></i> NOTES</span>`+
+    `<textarea id="top-notes-input" class="notes-strip-ta" rows="1" placeholder="Jot quick notes for today…" oninput="_topNotesInput(this)">${esc(topNotes)}</textarea>`;
+  _topNotesAutosize(document.getElementById('top-notes-input'));
+}
 let watchMode = 'daily';
 let watchEditIndex = null; // null = adding new; number = editing that row
 function openWatchModal(mode, editIndex){
@@ -5132,7 +5148,7 @@ function saveWatch(){
   closeWatchModal();
   renderWatchlist(watchMode);
 }
-function removeWatch(mode,i){ watchlists[mode].splice(i,1); renderWatchlist(mode); }
+function removeWatch(mode,i){ _watchTipHide(); watchlists[mode].splice(i,1); renderWatchlist(mode); if(typeof scheduleSave==='function') scheduleSave(); }
 function renderWatchlist(mode){
   if(mode==='daily') refreshWatchTopbar(); // keep the persistent top-bar watchlist in sync
   const tbody=document.getElementById(mode+'-watch-tbody');
@@ -7549,6 +7565,7 @@ function collectData() {
     masterMistakes: masterMistakes,
     newsList: newsList,
     watchlists: watchlists,
+    topNotes: topNotes,
     pbStore: pbStore,
     tmCommitStore: tmCommitStore,
     tmSetupSpecific: tmSetupSpecific,
@@ -7722,6 +7739,9 @@ async function loadSavedData() {
       renderWatchlist('daily');
       renderWatchlist('weekly');
     }
+    // Restore quick notes strip
+    if (typeof d.topNotes === 'string') topNotes = d.topNotes;
+    try { renderNotesStrip(); } catch(e) {}
     // Restore playbook gallery images
     if (d.pbStore) {
       Object.assign(pbStore, d.pbStore);
@@ -8135,6 +8155,7 @@ document.addEventListener('visibilitychange', function() {
 // ── LOAD ON STARTUP ───────────────────────────────────────────
 renderPlaybook();
 refreshWatchTopbar(); // show the persistent top-bar watchlist immediately on the default page
+renderNotesStrip();   // show the quick-notes strip immediately too
 loadSavedData();
 // Re-evaluate the daily stop banner every 5 minutes so it clears automatically
 // when the trading day rolls over at 03:00 BKK (even if the dashboard is left open).
