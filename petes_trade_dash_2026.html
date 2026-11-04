@@ -7042,6 +7042,26 @@ function rcGetOrCreate(dateStr) {
   if (!Array.isArray(c.mgmtRows)) c.mgmtRows = RC_MGMT_ROWS.map(r => ({ ...r }));
   return c;
 }
+// Is a report card still blank — nothing ticked, written or scored? (used to safely re-template it)
+function _rcUntouched(c){
+  if(!c) return false;
+  const anyRoutine = c.routine && Object.values(c.routine).some(v => v===true);
+  const anyMgmt    = c.mgmt && Object.values(c.mgmt).some(v => v==='Y' || v==='N');
+  const anyText    = c.texts && Object.values(c.texts).some(v => typeof v==='string' && v.trim());
+  const anyMissed  = c.missedReasons && Object.keys(c.missedReasons).length;
+  // Scores auto-fill to "0/5", "0/8" on a blank card — only a non-zero numerator means it was used.
+  const scored = s => { const m = String(s||'').match(/^\s*(\d+)/); return m && +m[1] > 0; };
+  return !anyRoutine && !anyMgmt && !anyText && !anyMissed
+      && !scored(c.score) && !scored(c.routineScore) && !scored(c.mgmtScore)
+      && !(c.marketTrend && c.marketTrend.trim()) && !(c.day && c.day.trim());
+}
+// Do two routine/management row lists differ in shape (id/time/label)?
+function _rcRowsDiffer(a, b){
+  a = a||[]; b = b||[];
+  if(a.length !== b.length) return true;
+  for(let i=0;i<a.length;i++){ if((a[i].id||'')!==(b[i].id||'') || (a[i].time||'')!==(b[i].time||'') || (a[i].label||'')!==(b[i].label||'')) return true; }
+  return false;
+}
 
 function rcRenderRows() {
   const card = rcGetOrCreate(rcCurrentDate);
@@ -7739,9 +7759,25 @@ async function loadSavedData() {
       }
       renderPsychLog();
     }
+    // Restore the Daily Routine & Management lists BEFORE touching report cards, so that
+    // creating today's card (in rcPopulateFields below) snapshots the CORRECT template
+    // instead of the old built-in default. (Was previously restored further down, after
+    // today's card had already been auto-created with the stale default.)
+    if (Array.isArray(d.rcRoutineRows) && d.rcRoutineRows.length) RC_ROUTINE_ROWS = d.rcRoutineRows;
+    if (Array.isArray(d.rcMgmtRows) && d.rcMgmtRows.length) RC_MGMT_ROWS = d.rcMgmtRows;
     // Restore report cards
     if (d.reportCards) {
       Object.assign(reportCards, d.reportCards);
+      // Self-heal: if today's card was auto-created earlier with a stale template and is
+      // still completely blank, re-snapshot it from the current (correct) template.
+      try {
+        const _td = new Date().toISOString().split('T')[0];
+        const _c = reportCards[_td];
+        if (_c && _rcUntouched(_c) && _rcRowsDiffer(_c.routineRows, RC_ROUTINE_ROWS)) {
+          _c.routineRows = RC_ROUTINE_ROWS.map(r => ({ ...r }));
+          _c.mgmtRows    = RC_MGMT_ROWS.map(r => ({ ...r }));
+        }
+      } catch(e) {}
       try { rcPopulateFields(); } catch(e) { /* elements not visible yet — will populate when tab opens */ }
     }
     // Restore daily rules
@@ -7774,9 +7810,7 @@ async function loadSavedData() {
     if (d.customMissedReasons && d.customMissedReasons.length) {
       customMissedReasons.push(...d.customMissedReasons);
     }
-    // Restore edited Daily Routine & Trade Management item lists
-    if (Array.isArray(d.rcRoutineRows) && d.rcRoutineRows.length) RC_ROUTINE_ROWS = d.rcRoutineRows;
-    if (Array.isArray(d.rcMgmtRows) && d.rcMgmtRows.length) RC_MGMT_ROWS = d.rcMgmtRows;
+    // (Daily Routine & Management lists were already restored above, before report cards.)
     // Freeze each existing report card's routine/management list to its current state, so future
     // edits to the lists only affect today + forward — never the routines shown/ticked on past days.
     Object.values(reportCards).forEach(c => {
