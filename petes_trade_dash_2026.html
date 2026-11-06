@@ -1279,7 +1279,11 @@ input[type=file]{display:none}
 
     <div class="form-grid">
       <div class="form-group full">
-        <div class="form-label">Setup <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">— pick one, or add several for a confluence</span></div>
+        <div class="form-label">Setup <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">— choose a direction, then pick one (or add several for a confluence)</span></div>
+        <div id="f-setup-dir" style="display:inline-flex;gap:6px;margin-bottom:8px">
+          <button type="button" id="f-dir-long" onclick="setSetupDir('long')" style="border:1px solid var(--green);background:var(--green);color:#0a0a0c;border-radius:6px;padding:4px 16px;font-size:11px;font-family:var(--fb);font-weight:700;cursor:pointer">Long</button>
+          <button type="button" id="f-dir-short" onclick="setSetupDir('short')" style="border:1px solid var(--border2);background:transparent;color:var(--muted);border-radius:6px;padding:4px 16px;font-size:11px;font-family:var(--fb);font-weight:700;cursor:pointer">Short</button>
+        </div>
         <select class="form-select" id="f-setup" onchange="onSetupPick()"><option value="">— Select a setup —</option></select>
         <div id="f-setup-chips" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
       </div>
@@ -1543,6 +1547,7 @@ let wl=null,cs={},tlImgs=[null,null,null,null];
 
 function openModal(){
   const sel=document.getElementById('f-setup');
+  setupDirFilter='long';
   fillSetupSelect(sel);
   document.getElementById('f-date').value=(typeof drToday==='function'?drToday():new Date().toISOString().split('T')[0]);
   updateDateHint();
@@ -1650,16 +1655,32 @@ function swReset(){
 }
 
 // Populate the trade-log setup dropdown, grouped by playbook category (Opening Drive, Continuation, etc.)
+// Setup picker: choose Long or Short first, then the dropdown shows only that direction's
+// setups (plus any marked "both"). 'both' setups appear under either direction.
+let setupDirFilter = 'long';   // 'long' | 'short'
+function _setupMatchesDir(p){ return setupDirFilter==='short' ? (p.type==='short'||p.type==='both') : (p.type==='long'||p.type==='both'); }
 function fillSetupSelect(sel){
   if(!sel) sel=document.getElementById('f-setup');
-  sel.innerHTML='<option value="">— Select a setup —</option>';
+  if(!sel) return;
+  sel.innerHTML='<option value="">— Select a '+setupDirFilter+' setup —</option>';
   categories.forEach(cat=>{
-    if(!cat.plays.length) return;
+    const plays=(cat.plays||[]).filter(_setupMatchesDir);
+    if(!plays.length) return;
     const grp=document.createElement('optgroup');
     grp.label=(cat.number?cat.number+' · ':'')+cat.title.replace(/&amp;/g,'&');
-    cat.plays.forEach(p=>{const o=document.createElement('option');o.value=p.id;o.textContent=p.name;grp.appendChild(o);});
+    plays.forEach(p=>{const o=document.createElement('option');o.value=p.id;o.textContent=p.name;grp.appendChild(o);});
     sel.appendChild(grp);
   });
+  _updateSetupDirBtns();
+}
+function _updateSetupDirBtns(){
+  const lb=document.getElementById('f-dir-long'), sb=document.getElementById('f-dir-short');
+  if(lb){ const on=setupDirFilter==='long'; lb.style.background=on?'var(--green)':'transparent'; lb.style.borderColor=on?'var(--green)':'var(--border2)'; lb.style.color=on?'#0a0a0c':'var(--muted)'; }
+  if(sb){ const on=setupDirFilter==='short'; sb.style.background=on?'var(--red)':'transparent'; sb.style.borderColor=on?'var(--red)':'var(--border2)'; sb.style.color=on?'#fff':'var(--muted)'; }
+}
+function setSetupDir(dir){
+  setupDirFilter = (dir==='short') ? 'short' : 'long';
+  fillSetupSelect(document.getElementById('f-setup'));
 }
 
 // ── MULTI-SETUP SELECTION (confluence) ────────────────────────
@@ -4843,6 +4864,7 @@ function renderMissedTradesPerf() {
 
 function openTodModal() {
   const sel = document.getElementById('f-setup');
+  setupDirFilter='long';
   fillSetupSelect(sel);
   document.getElementById('f-date').value = (typeof drToday==='function'?drToday():new Date().toISOString().split('T')[0]);
   updateDateHint();
@@ -4946,6 +4968,10 @@ function openEditTrade(index, isTod) {
       : (typeof t.setup === 'string' ? t.setup.split(' + ').map(s=>s.trim()).filter(Boolean) : []);
     names.forEach(n => { const p = allPlays().find(p => p.name === n); if (p && !selectedSetupIds.includes(p.id)) selectedSetupIds.push(p.id); });
   }
+  // Default the direction toggle to the primary setup's direction (short setups → Short).
+  const _primary = selectedSetupIds.length ? getPlay(selectedSetupIds[0]) : null;
+  setupDirFilter = (_primary && _primary.type==='short') ? 'short' : 'long';
+  fillSetupSelect(document.getElementById('f-setup'));
   renderSetupChips();
   // Restore which criteria were checked (keyed by setup|type|label)
   tradeCriteriaState = {};
