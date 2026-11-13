@@ -1023,6 +1023,7 @@ input[type=file]{display:none}
     <div class="tl-page">
       <div class="subtab-bar">
         <div class="subtab active" onclick="switchSubtab(this,'trade-mgmt')">Trade Management</div>
+        <div class="subtab" onclick="switchSubtab(this,'missed-trades');renderMissedTradeLog()">Missed Trades</div>
         <div class="subtab" onclick="switchSubtab(this,'psych-notes')">Notes &amp; Reminders</div>
       </div>
 
@@ -1122,6 +1123,48 @@ input[type=file]{display:none}
           </div>
           <div id="pq-list"></div>
         </div>
+      </div>
+
+      <!-- MISSED TRADES -->
+      <div class="subtab-content" id="subtab-missed-trades">
+        <style>
+          #subtab-missed-trades .mt-reason{display:inline-block;font-size:11px;padding:4px 10px;border-radius:999px;border:0.5px solid var(--border2);background:var(--surface);color:var(--muted);cursor:pointer;transition:all .12s;margin:0 4px 5px 0}
+          #subtab-missed-trades .mt-reason:hover{border-color:var(--accent)}
+          #subtab-missed-trades .mt-reason.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+          #subtab-missed-trades .mt-stat{background:var(--surface);border:0.5px solid var(--border2);border-radius:8px;padding:10px 12px}
+          #subtab-missed-trades .mt-stat .n{font-family:var(--fd);font-size:19px;font-weight:800;line-height:1.1}
+          #subtab-missed-trades .mt-stat .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-top:3px}
+        </style>
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+          <div>
+            <div style="font-family:var(--fd);font-size:13px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--text)">Missed Trades</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px">Log the trades you let slip — the reason you missed it, whether it would've won or lost, its max R, and the ideal hold — so the pattern is impossible to ignore.</div>
+          </div>
+          <button class="add-trade-btn" onclick="mtOpenForm()"><i class="ti ti-plus"></i> Log Missed Trade</button>
+        </div>
+        <div id="mt-summary" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px"></div>
+        <!-- add / edit form -->
+        <div id="mt-form" style="display:none;background:var(--surface);border:0.5px solid var(--border2);border-left:2px solid var(--accent);border-radius:0 8px 8px 0;padding:14px 16px;margin-bottom:16px">
+          <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px">
+            <div><div class="form-label">Date</div><input type="date" id="mt-date" class="form-input" style="width:150px;font-size:12px"></div>
+            <div><div class="form-label">Ticker <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div><input id="mt-ticker" class="form-input" placeholder="e.g. NVDA" style="width:110px;font-size:12px;text-transform:uppercase"></div>
+            <div><div class="form-label">Would it have been</div><div class="wl-toggle"><button class="wl-btn win" id="mt-wl-w" onclick="mtSetWL('W')">W</button><button class="wl-btn loss" id="mt-wl-l" onclick="mtSetWL('L')">L</button></div></div>
+            <div><div class="form-label">Max R</div><input type="number" step="0.1" id="mt-maxr" class="form-input" placeholder="e.g. 4.5" style="width:100px;font-size:12px"></div>
+            <div><div class="form-label">Ideal hold duration</div><input id="mt-hold" class="form-input" placeholder="e.g. 45m / 1h 20m" style="width:150px;font-size:12px"></div>
+          </div>
+          <div class="form-label">Missed-trade reason(s) <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">— same list as the Daily Report Card</span></div>
+          <div id="mt-reasons" style="margin-bottom:12px"></div>
+          <div class="form-label">Note <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>
+          <input id="mt-note" class="form-input" placeholder="What happened / what to fix next time" style="width:100%;font-size:12px;margin-bottom:12px">
+          <div style="display:flex;gap:8px">
+            <button class="modal-save-btn" style="width:auto;padding:7px 18px;margin-top:0;font-size:12px" onclick="mtSaveForm()"><i class="ti ti-check"></i> Save</button>
+            <button class="wl-btn" style="padding:7px 16px;font-size:12px" onclick="mtCancelForm()">Cancel</button>
+          </div>
+        </div>
+        <div class="empty-log" id="mt-empty" style="padding:40px 20px">No missed trades logged yet — hit "Log Missed Trade" to start.</div>
+        <div style="overflow-x:auto"><table class="log-table" id="mt-table" style="display:none;width:100%;min-width:760px"><thead><tr>
+          <th>Date</th><th>Ticker</th><th>Reason(s)</th><th>W/L</th><th>Max R</th><th>Ideal Hold</th><th></th>
+        </tr></thead><tbody id="mt-tbody"></tbody></table></div>
       </div>
     </div>
   </div>
@@ -3710,6 +3753,87 @@ function pqDelete(id){
 function pqToggle(id){
   pqOpenId = (pqOpenId===id) ? null : id;
   renderPsychLog();
+}
+
+// ── MISSED TRADES LOG (Trade Management page) ─────────────────
+// A lightweight journal of trades you didn't take: the reason missed (same list as the
+// Daily Report Card), whether it would have won or lost, its max R, and the ideal hold.
+let missedTradeLog = [];   // [{id, date, ticker, reasons:[label], wl:'W'|'L', maxR, hold, note}]
+let _mtNextId = 1, _mtEditId = null;
+let _mtFormReasons = new Set(), _mtFormWL = null;
+function _mtSyncNextId(){ let mx=0; missedTradeLog.forEach(m=>{ if(+m.id>mx) mx=+m.id; }); _mtNextId=mx+1; }
+function mtRenderReasonChips(){
+  const el=document.getElementById('mt-reasons'); if(!el) return;
+  const reasons=(typeof allMissedReasons==='function')?allMissedReasons():[];
+  el.innerHTML = reasons.length
+    ? reasons.map((r,i)=>`<span class="mt-reason${_mtFormReasons.has(r)?' on':''}" onclick="mtToggleReason(${i})">${_escHtml(r)}</span>`).join('')
+    : '<span style="font-size:11px;color:var(--muted)">No reasons defined yet — add them on the Daily Report Card.</span>';
+}
+function mtToggleReason(i){ const reasons=allMissedReasons(); const r=reasons[i]; if(!r) return; if(_mtFormReasons.has(r)) _mtFormReasons.delete(r); else _mtFormReasons.add(r); mtRenderReasonChips(); }
+function mtSetWL(wl){ _mtFormWL=wl; const w=document.getElementById('mt-wl-w'), l=document.getElementById('mt-wl-l'); if(w) w.classList.toggle('active',wl==='W'); if(l) l.classList.toggle('active',wl==='L'); }
+function mtOpenForm(editId){
+  _mtEditId = editId||null;
+  const m = editId ? missedTradeLog.find(x=>x.id===editId) : null;
+  _mtFormReasons = new Set(m ? (m.reasons||[]) : []);
+  _mtFormWL = m ? (m.wl||null) : null;
+  const set=(id,v)=>{ const e=document.getElementById(id); if(e) e.value=v; };
+  set('mt-date', m ? (m.date||'') : ((typeof drToday==='function')?drToday():new Date().toISOString().split('T')[0]));
+  set('mt-ticker', m ? (m.ticker||'') : '');
+  set('mt-maxr', m && m.maxR!=null ? m.maxR : '');
+  set('mt-hold', m ? (m.hold||'') : '');
+  set('mt-note', m ? (m.note||'') : '');
+  mtSetWL(_mtFormWL);
+  mtRenderReasonChips();
+  const f=document.getElementById('mt-form'); if(f){ f.style.display='block'; f.scrollIntoView({block:'nearest'}); }
+}
+function mtCancelForm(){ const f=document.getElementById('mt-form'); if(f) f.style.display='none'; _mtEditId=null; _mtFormReasons=new Set(); _mtFormWL=null; }
+function mtSaveForm(){
+  const val=id=>{ const e=document.getElementById(id); return e?e.value:''; };
+  const ticker=val('mt-ticker').trim().toUpperCase();
+  const reasons=[..._mtFormReasons];
+  const maxRraw=val('mt-maxr');
+  if(!_mtFormWL && !reasons.length && !ticker){ alert('Add at least a reason, a W/L, or a ticker.'); return; }
+  const rec={ date:val('mt-date'), ticker, reasons, wl:_mtFormWL, maxR: maxRraw===''?null:parseFloat(maxRraw), hold:val('mt-hold').trim(), note:val('mt-note').trim() };
+  if(_mtEditId){ const m=missedTradeLog.find(x=>x.id===_mtEditId); if(m) Object.assign(m, rec); }
+  else { rec.id=_mtNextId++; missedTradeLog.push(rec); }
+  if(typeof scheduleSave==='function') scheduleSave();
+  mtCancelForm();
+  renderMissedTradeLog();
+}
+function mtEdit(id){ mtOpenForm(id); }
+function mtDelete(id){ const m=missedTradeLog.find(x=>x.id===id); if(!m) return; if(!confirm('Delete this missed-trade entry?')) return; missedTradeLog=missedTradeLog.filter(x=>x.id!==id); if(typeof scheduleSave==='function') scheduleSave(); renderMissedTradeLog(); }
+function renderMissedTradeLog(){
+  const tbl=document.getElementById('mt-table'), tb=document.getElementById('mt-tbody'), empty=document.getElementById('mt-empty'), sum=document.getElementById('mt-summary');
+  if(!tb) return;
+  const n=missedTradeLog.length;
+  const wins=missedTradeLog.filter(m=>m.wl==='W').length;
+  const winRs=missedTradeLog.filter(m=>m.wl==='W'&&m.maxR!=null).map(m=>m.maxR);
+  const avgWinR=winRs.length ? winRs.reduce((a,b)=>a+b,0)/winRs.length : null;
+  const rc={}; missedTradeLog.forEach(m=>(m.reasons||[]).forEach(r=>rc[r]=(rc[r]||0)+1));
+  const topReason=Object.entries(rc).sort((a,b)=>b[1]-a[1])[0];
+  if(sum){
+    const stat=(nv,l,c)=>`<div class="mt-stat"><div class="n" style="color:${c||'var(--text)'}">${nv}</div><div class="l">${l}</div></div>`;
+    sum.innerHTML = stat(n,'Missed')
+      + stat(n?`${wins} · ${Math.round(wins/n*100)}%`:'—','Would-be winners','var(--green)')
+      + stat(avgWinR!=null?avgWinR.toFixed(1)+'R':'—','Avg max R (winners)','var(--accent2)')
+      + stat(topReason?_escHtml(topReason[0]):'—','Top reason');
+  }
+  if(!n){ if(tbl) tbl.style.display='none'; if(empty) empty.style.display='block'; return; }
+  if(tbl) tbl.style.display='table'; if(empty) empty.style.display='none';
+  const rows=[...missedTradeLog].sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))|| (b.id-a.id));
+  tb.innerHTML=rows.map(m=>{
+    const wlCol=m.wl==='W'?'var(--green)':m.wl==='L'?'var(--red)':'var(--muted)';
+    const reasons=(m.reasons||[]).map(r=>`<span style="display:inline-block;font-size:10px;background:rgba(255,255,255,0.06);border-radius:3px;padding:1px 6px;margin:1px 3px 1px 0">${_escHtml(r)}</span>`).join('')||'<span style="color:var(--muted)">—</span>';
+    return `<tr>
+      <td style="font-family:var(--fd);white-space:nowrap">${typeof fmtDMY==='function'?fmtDMY(m.date):(m.date||'—')}</td>
+      <td class="td-ticker">${_escHtml(m.ticker||'—')}</td>
+      <td>${reasons}${m.note?`<div style="font-size:10px;color:var(--muted);margin-top:3px">${_escHtml(m.note)}</div>`:''}</td>
+      <td style="font-family:var(--fd);font-weight:700;color:${wlCol}">${m.wl||'—'}</td>
+      <td style="font-family:var(--fd)">${m.maxR!=null?m.maxR+'R':'—'}</td>
+      <td style="font-family:var(--fd);white-space:nowrap">${_escHtml(m.hold||'—')}</td>
+      <td style="white-space:nowrap;text-align:right"><button onclick="mtEdit(${m.id})" title="Edit" style="background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:2px 5px"><i class="ti ti-pencil"></i></button><button onclick="mtDelete(${m.id})" title="Delete" style="background:transparent;border:none;color:rgba(255,255,255,0.3);cursor:pointer;font-size:14px;padding:2px 5px"><i class="ti ti-trash"></i></button></td>
+    </tr>`;
+  }).join('');
 }
 
 renderPlaybook();
@@ -7600,6 +7724,7 @@ function collectData() {
     psychNotes: psychNotes,
     psychLogs: psychLogs,
     nextPsychLogId: nextPsychLogId,
+    missedTradeLog: missedTradeLog,
     reportCards: reportCards,
     dailyRules: dailyRules,
     tradingSettings: tradingSettings,
@@ -7804,6 +7929,12 @@ async function loadSavedData() {
         nextPsychLogId = Math.max(...psychLogs.map(q => q.id || 0)) + 1;
       }
       renderPsychLog();
+    }
+    // Restore the Missed Trades log (Trade Management page)
+    if (Array.isArray(d.missedTradeLog)) {
+      missedTradeLog = d.missedTradeLog.filter(m => m && typeof m === 'object');
+      _mtSyncNextId();
+      try { renderMissedTradeLog(); } catch(e) {}
     }
     // Restore the Daily Routine & Management lists BEFORE touching report cards, so that
     // creating today's card (in rcPopulateFields below) snapshots the CORRECT template
