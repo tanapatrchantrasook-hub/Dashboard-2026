@@ -318,8 +318,8 @@ input[type=file]{display:none}
     <div class="logo-sub">2026 · ROLLING</div>
     <div class="portfolio-switch" id="portfolio-switch">
       <button class="pf-btn active" id="pf-btn-TG" onclick="switchPortfolio('TG')" title="TechGlobe — main portfolio">TechGlobe</button>
-      <button class="pf-btn" id="pf-btn-FT" onclick="switchPortfolio('FT')" title="Forward Test — separate portfolio (own trades &amp; performance)">Forward Test</button>
-      <button class="pf-btn" id="pf-btn-BT" onclick="switchPortfolio('BT')" title="Back Test — separate portfolio (own trades &amp; performance)">Back Test</button>
+      <button class="pf-btn" id="pf-btn-FT" onclick="switchPortfolio('FT')" title="FT — Forward Test portfolio (own trades &amp; performance)">FT</button>
+      <button class="pf-btn" id="pf-btn-BT" onclick="switchPortfolio('BT')" title="BT — Back Test portfolio (own trades &amp; performance)">BT</button>
       <button class="pf-btn" id="pf-btn-IBKR" onclick="switchPortfolio('IBKR')" title="IBKR — separate portfolio (own trades &amp; performance)">IBKR</button>
       <button class="pf-btn" id="pf-btn-SET" onclick="switchPortfolio('SET')" title="SET — Stock Exchange of Thailand portfolio (own trades &amp; performance)">SET</button>
     </div>
@@ -1502,7 +1502,7 @@ const pageTitles={
 // Topbar title = current page name + the active portfolio tab, e.g. "PERFORMANCE & STATS (TG)".
 let _topbarPageKey = 'tradelog';   // the page that is active by default on load
 // Friendly display names for the portfolios (internal keys stay TG/FT/BT/IBKR/SET so data is untouched).
-const _PORTFOLIO_LABELS = { TG:'TechGlobe', FT:'Forward Test', BT:'Back Test', IBKR:'IBKR', SET:'SET' };
+const _PORTFOLIO_LABELS = { TG:'TechGlobe', FT:'FT', BT:'BT', IBKR:'IBKR', SET:'SET' };
 function _pfLabel(p){ return (_PORTFOLIO_LABELS && _PORTFOLIO_LABELS[p]) || p; }
 function updateTopbarTitle(){
   const el = document.getElementById('topbar-title'); if(!el) return;
