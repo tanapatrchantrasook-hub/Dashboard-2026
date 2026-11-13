@@ -47,6 +47,37 @@ const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } }); // 2
 // For the CLOUD, screenshots are split into separate small objects (see supaSave/supaLoad)
 // so the synced main file stays tiny and never hits Supabase's ~50MB per-object cap.
 app.use(express.json({ limit: '512mb' }));
+
+// ── OPTIONAL ACCESS PASSWORD (Basic Auth) ─────────────────────
+// If access-config.json exists with a non-empty "password" (and enabled !== false),
+// the whole dashboard requires a login. Leave the file absent, blank, or enabled:false
+// to run open. The file is gitignored so the password is never committed. The browser's
+// built-in login box appears on open; it caches the credentials for the session.
+let ACCESS = null;
+try {
+  let c = null;
+  const ap = path.join(__dirname, 'access-config.json');
+  if (fs.existsSync(ap)) c = JSON.parse(fs.readFileSync(ap, 'utf8').replace(/^﻿/, ''));
+  if (process.env.ACCESS_PASSWORD) c = { user: process.env.ACCESS_USER || 'pete', password: process.env.ACCESS_PASSWORD, enabled: process.env.ACCESS_ENABLED !== 'false' };
+  if (c && c.password && String(c.password).trim() && c.enabled !== false) {
+    ACCESS = { user: (c.user || 'pete'), password: String(c.password) };
+    console.log('🔒 Access password ENABLED (login required)');
+  }
+} catch (e) { console.warn('access-config error:', e.message); }
+
+app.use((req, res, next) => {
+  if (!ACCESS) return next();
+  const m = /^Basic (.+)$/.exec(req.headers.authorization || '');
+  if (m) {
+    const decoded = Buffer.from(m[1], 'base64').toString();
+    const i = decoded.indexOf(':');
+    const p = decoded.slice(i + 1);
+    if (p === ACCESS.password) return next(); // any username, matching password
+  }
+  res.set('WWW-Authenticate', 'Basic realm="Pete\'s Trade Dash"');
+  return res.status(401).send('Password required.');
+});
+
 app.use(express.static(__dirname));
 app.use('/data/images', express.static(IMAGES_DIR));
 

@@ -18,3 +18,4 @@ backups/
 # Zips
 *.zip
 keepalive.log
+access-config.json
