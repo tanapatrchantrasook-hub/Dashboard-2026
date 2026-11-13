@@ -51,7 +51,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);font-size:13px
 /* Portfolio switcher (TG/BT · FT/IBKR) — independent portfolios sharing this dashboard */
 .portfolio-switch{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:11px}
 .pf-btn{padding:6px 4px;border:1px solid var(--border2);background:transparent;color:var(--muted);border-radius:6px;font-family:var(--fd);font-size:10px;font-weight:700;letter-spacing:0.02em;line-height:1.2;cursor:pointer;transition:all .15s}
-#pf-btn-SET{grid-column:1 / -1}
+.pf-btn.pf-add{border-style:dashed}
 .pf-btn:hover{color:var(--text);border-color:var(--accent2)}
 .pf-btn.active{background:var(--accent);color:#0a0a0c;border-color:var(--accent)}
 .nav-item{display:flex;align-items:center;gap:10px;padding:10px 18px;font-size:13px;color:var(--muted);cursor:pointer;transition:all .15s;border-left:2px solid transparent;line-height:1.3}
@@ -322,6 +322,7 @@ input[type=file]{display:none}
       <button class="pf-btn" id="pf-btn-BT" onclick="switchPortfolio('BT')" title="BT — Back Test portfolio (own trades &amp; performance)">BT</button>
       <button class="pf-btn" id="pf-btn-IBKR" onclick="switchPortfolio('IBKR')" title="IBKR — separate portfolio (own trades &amp; performance)">IBKR</button>
       <button class="pf-btn" id="pf-btn-SET" onclick="switchPortfolio('SET')" title="SET — Stock Exchange of Thailand portfolio (own trades &amp; performance)">SET</button>
+      <button class="pf-btn pf-add" onclick="addPortfolio()" title="Add another portfolio">+ Add</button>
     </div>
   </div>
   <div class="nav-item" id="nav-whiteboard" onclick="switchPage('whiteboard')"><i class="ti ti-clipboard-text"></i> Whiteboard</div>
@@ -7679,8 +7680,34 @@ function scheduleSave() {
 // computers keep working), and only the INACTIVE portfolio(s) are stored under
 // the new `inactivePortfolios` key.
 let activePortfolio = 'TG';
-const _PORTFOLIO_NAMES = ['TG','FT','BT','IBKR','SET'];
+const _PORTFOLIO_NAMES = ['TG','FT','BT','IBKR','SET'];   // built-ins, plus any the user adds (see customPortfolios)
 const _portfolioStash = { TG:null, FT:null, BT:null, IBKR:null, SET:null };   // holds the INACTIVE portfolios' data
+let customPortfolios = [];   // user-added portfolios: [{key:'PF1', label:'My name'}] — persisted
+function _registerPortfolio(key, label){
+  if(!key || _PORTFOLIO_NAMES.includes(key)) return;
+  _PORTFOLIO_NAMES.push(key); _PORTFOLIO_LABELS[key] = label || key;
+  if(!(key in _portfolioStash)) _portfolioStash[key] = null;
+}
+function addPortfolio(){
+  const name=(prompt('Name for the new portfolio:','')||'').trim();
+  if(!name) return;
+  if(name.length>24){ alert('Please keep the name to 24 characters or fewer.'); return; }
+  const lc=name.toLowerCase();
+  if(_PORTFOLIO_NAMES.some(k=>k.toLowerCase()===lc || _pfLabel(k).toLowerCase()===lc)){ alert('A portfolio called "'+name+'" already exists.'); return; }
+  let n=1; while(_PORTFOLIO_NAMES.includes('PF'+n)) n++;
+  const key='PF'+n;
+  customPortfolios.push({ key, label:name });
+  _registerPortfolio(key, name);
+  _portfolioStash[key] = _emptyPortfolio();
+  renderPortfolioButtons();
+  if(typeof scheduleSave==='function') scheduleSave();
+}
+function renderPortfolioButtons(){
+  const el=document.getElementById('portfolio-switch'); if(!el) return;
+  const tips={ TG:'TechGlobe — main portfolio', FT:'FT — Forward Test portfolio', BT:'BT — Back Test portfolio', SET:'SET — Stock Exchange of Thailand portfolio' };
+  el.innerHTML=_PORTFOLIO_NAMES.map(p=>`<button class="pf-btn${p===activePortfolio?' active':''}" id="pf-btn-${p}" onclick="switchPortfolio('${p}')" title="${_escAttr(tips[p]||(_pfLabel(p)+' — separate portfolio'))} (own trades &amp; performance)">${_escHtml(_pfLabel(p))}</button>`).join('')
+    + `<button class="pf-btn pf-add" onclick="addPortfolio()" title="Add another portfolio">+ Add</button>`;
+}
 function _defaultSettings(){ return { dailyTarget:'', dailyLoss:'', startingBalance:'' }; }
 function _rrCopy(a){ return (Array.isArray(a)?a:[]).map(r => ({ ...r })); }
 function _emptyPortfolio(){ return { trades:[], todTrades:[], reportCards:{}, goals:[], nextGoalId:1, tradingSettings:_defaultSettings(), rcRoutineRows:_rrCopy(RC_ROUTINE_ROWS), rcMgmtRows:_rrCopy(RC_MGMT_ROWS) }; }
@@ -7698,9 +7725,7 @@ function _hydratePortfolio(p){
   if(Array.isArray(p.rcRoutineRows) && p.rcRoutineRows.length) RC_ROUTINE_ROWS = _rrCopy(p.rcRoutineRows);  // this portfolio's own checklist template
   if(Array.isArray(p.rcMgmtRows) && p.rcMgmtRows.length) RC_MGMT_ROWS = _rrCopy(p.rcMgmtRows);
 }
-function updatePortfolioButtons(){
-  _PORTFOLIO_NAMES.forEach(p=>{ const b=document.getElementById('pf-btn-'+p); if(b) b.classList.toggle('active', p===activePortfolio); });
-}
+function updatePortfolioButtons(){ renderPortfolioButtons(); }
 function _renderActivePortfolio(){
   try{ renderTradeTable(); }catch(e){}
   try{ renderTradesOfDay(); }catch(e){}
@@ -7766,6 +7791,7 @@ function renderWhiteboard(){
 function collectData() {
   return {
     activePortfolio: activePortfolio,
+    customPortfolios: customPortfolios,
     inactivePortfolios: (function(){ const o={}; for(const p of _PORTFOLIO_NAMES){ if(p!==activePortfolio) o[p] = _portfolioStash[p] || _emptyPortfolio(); } return o; })(),
     trades: trades,
     goals: goals,
@@ -8133,6 +8159,11 @@ async function loadSavedData() {
 
     // ── PORTFOLIO SWITCHER: the top-level data restored above is the ACTIVE portfolio;
     // load the inactive portfolio(s) from `inactivePortfolios` (fresh empty FT on first run). ──
+    // Register any user-added portfolios first, so they count as valid names below.
+    customPortfolios = Array.isArray(d.customPortfolios)
+      ? d.customPortfolios.filter(c => c && /^[A-Za-z0-9_]+$/.test(c.key || '')).map(c => ({ key: c.key, label: String(c.label || c.key) }))
+      : [];
+    customPortfolios.forEach(c => _registerPortfolio(c.key, c.label));
     activePortfolio = _PORTFOLIO_NAMES.includes(d.activePortfolio) ? d.activePortfolio : 'TG';
     for (const p of _PORTFOLIO_NAMES) _portfolioStash[p] = null;
     if (d.inactivePortfolios && typeof d.inactivePortfolios === 'object') {
