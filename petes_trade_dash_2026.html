@@ -50,7 +50,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);font-size:13px
 .logo-sub{font-size:11px;color:var(--muted);letter-spacing:0.08em;margin-top:2px}
 /* Portfolio switcher (TG/BT · FT/IBKR) — independent portfolios sharing this dashboard */
 .portfolio-switch{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:11px}
-.pf-btn{padding:5px 0;border:1px solid var(--border2);background:transparent;color:var(--muted);border-radius:6px;font-family:var(--fd);font-size:11px;font-weight:700;letter-spacing:0.08em;cursor:pointer;transition:all .15s}
+.pf-btn{padding:6px 4px;border:1px solid var(--border2);background:transparent;color:var(--muted);border-radius:6px;font-family:var(--fd);font-size:10px;font-weight:700;letter-spacing:0.02em;line-height:1.2;cursor:pointer;transition:all .15s}
+#pf-btn-SET{grid-column:1 / -1}
 .pf-btn:hover{color:var(--text);border-color:var(--accent2)}
 .pf-btn.active{background:var(--accent);color:#0a0a0c;border-color:var(--accent)}
 .nav-item{display:flex;align-items:center;gap:10px;padding:10px 18px;font-size:13px;color:var(--muted);cursor:pointer;transition:all .15s;border-left:2px solid transparent;line-height:1.3}
@@ -316,10 +317,11 @@ input[type=file]{display:none}
     <div class="logo-main">PETE'S <span class="logo-accent">TRADE</span> DASH</div>
     <div class="logo-sub">2026 · ROLLING</div>
     <div class="portfolio-switch" id="portfolio-switch">
-      <button class="pf-btn active" id="pf-btn-TG" onclick="switchPortfolio('TG')" title="TG — main portfolio">TG</button>
-      <button class="pf-btn" id="pf-btn-FT" onclick="switchPortfolio('FT')" title="FT — separate portfolio (own trades &amp; performance)">FT</button>
-      <button class="pf-btn" id="pf-btn-BT" onclick="switchPortfolio('BT')" title="BT — separate portfolio (own trades &amp; performance)">BT</button>
+      <button class="pf-btn active" id="pf-btn-TG" onclick="switchPortfolio('TG')" title="TechGlobe — main portfolio">TechGlobe</button>
+      <button class="pf-btn" id="pf-btn-FT" onclick="switchPortfolio('FT')" title="Forward Test — separate portfolio (own trades &amp; performance)">Forward Test</button>
+      <button class="pf-btn" id="pf-btn-BT" onclick="switchPortfolio('BT')" title="Back Test — separate portfolio (own trades &amp; performance)">Back Test</button>
       <button class="pf-btn" id="pf-btn-IBKR" onclick="switchPortfolio('IBKR')" title="IBKR — separate portfolio (own trades &amp; performance)">IBKR</button>
+      <button class="pf-btn" id="pf-btn-SET" onclick="switchPortfolio('SET')" title="SET — Stock Exchange of Thailand portfolio (own trades &amp; performance)">SET</button>
     </div>
   </div>
   <div class="nav-item" id="nav-whiteboard" onclick="switchPage('whiteboard')"><i class="ti ti-clipboard-text"></i> Whiteboard</div>
@@ -1499,11 +1501,14 @@ const pageTitles={
 };
 // Topbar title = current page name + the active portfolio tab, e.g. "PERFORMANCE & STATS (TG)".
 let _topbarPageKey = 'tradelog';   // the page that is active by default on load
+// Friendly display names for the portfolios (internal keys stay TG/FT/BT/IBKR/SET so data is untouched).
+const _PORTFOLIO_LABELS = { TG:'TechGlobe', FT:'Forward Test', BT:'Back Test', IBKR:'IBKR', SET:'SET' };
+function _pfLabel(p){ return (_PORTFOLIO_LABELS && _PORTFOLIO_LABELS[p]) || p; }
 function updateTopbarTitle(){
   const el = document.getElementById('topbar-title'); if(!el) return;
   const base = (typeof pageTitles!=='undefined' && pageTitles[_topbarPageKey]) ? pageTitles[_topbarPageKey] : (_topbarPageKey || '');
   let pf = 'TG'; try { pf = activePortfolio; } catch(e) {}   // activePortfolio may be in TDZ during very early load
-  el.innerHTML = base + (pf ? ' <span style="color:var(--muted);font-weight:600;letter-spacing:0.04em">(' + pf + ')</span>' : '');
+  el.innerHTML = base + (pf ? ' <span style="color:var(--muted);font-weight:600;letter-spacing:0.04em">(' + _pfLabel(pf) + ')</span>' : '');
 }
 let currentTheme='teal';
 // Apply a theme ('teal' = 🌙 moon, 'orange' = ☀️ sun) to the UI. Does NOT persist.
@@ -7674,8 +7679,8 @@ function scheduleSave() {
 // computers keep working), and only the INACTIVE portfolio(s) are stored under
 // the new `inactivePortfolios` key.
 let activePortfolio = 'TG';
-const _PORTFOLIO_NAMES = ['TG','FT','BT','IBKR'];
-const _portfolioStash = { TG:null, FT:null, BT:null, IBKR:null };   // holds the INACTIVE portfolios' data
+const _PORTFOLIO_NAMES = ['TG','FT','BT','IBKR','SET'];
+const _portfolioStash = { TG:null, FT:null, BT:null, IBKR:null, SET:null };   // holds the INACTIVE portfolios' data
 function _defaultSettings(){ return { dailyTarget:'', dailyLoss:'', startingBalance:'' }; }
 function _rrCopy(a){ return (Array.isArray(a)?a:[]).map(r => ({ ...r })); }
 function _emptyPortfolio(){ return { trades:[], todTrades:[], reportCards:{}, goals:[], nextGoalId:1, tradingSettings:_defaultSettings(), rcRoutineRows:_rrCopy(RC_ROUTINE_ROWS), rcMgmtRows:_rrCopy(RC_MGMT_ROWS) }; }
